@@ -25,25 +25,25 @@ import (
 
 import (
 	"github.com/golang/mock/gomock"
+
 	perrors "github.com/pkg/errors"
+
 	"github.com/stretchr/testify/assert"
 )
 
 import (
-	"github.com/apache/dubbo-go/cluster/directory"
-	"github.com/apache/dubbo-go/cluster/loadbalance"
-	"github.com/apache/dubbo-go/common"
-	"github.com/apache/dubbo-go/common/constant"
-	"github.com/apache/dubbo-go/common/extension"
-	"github.com/apache/dubbo-go/protocol"
-	"github.com/apache/dubbo-go/protocol/invocation"
-	"github.com/apache/dubbo-go/protocol/mock"
+	"dubbo.apache.org/dubbo-go/v3/cluster/directory"
+	"dubbo.apache.org/dubbo-go/v3/cluster/loadbalance"
+	"dubbo.apache.org/dubbo-go/v3/common"
+	"dubbo.apache.org/dubbo-go/v3/common/constant"
+	"dubbo.apache.org/dubbo-go/v3/common/extension"
+	"dubbo.apache.org/dubbo-go/v3/protocol"
+	"dubbo.apache.org/dubbo-go/v3/protocol/invocation"
+	"dubbo.apache.org/dubbo-go/v3/protocol/mock"
 )
 
-var (
-	failfastUrl, _ = common.NewURL(
-		fmt.Sprintf("dubbo://%s:%d/com.ikurento.user.UserProvider", constant.LOCAL_HOST_VALUE, constant.DEFAULT_PORT))
-)
+var failfastUrl, _ = common.NewURL(
+	fmt.Sprintf("dubbo://%s:%d/com.ikurento.user.UserProvider", constant.LOCAL_HOST_VALUE, constant.DEFAULT_PORT))
 
 // registerFailfast register failfastCluster to cluster extension.
 func registerFailfast(invoker *mock.MockInvoker) protocol.Invoker {
@@ -53,6 +53,7 @@ func registerFailfast(invoker *mock.MockInvoker) protocol.Invoker {
 	invokers := []protocol.Invoker{}
 	invokers = append(invokers, invoker)
 
+	invoker.EXPECT().IsAvailable().Return(true).AnyTimes()
 	invoker.EXPECT().GetUrl().Return(failfastUrl)
 
 	staticDir := directory.NewStaticDirectory(invokers)
@@ -67,6 +68,7 @@ func TestFailfastInvokeSuccess(t *testing.T) {
 	invoker := mock.NewMockInvoker(ctrl)
 	clusterInvoker := registerFailfast(invoker)
 
+	invoker.EXPECT().IsAvailable().Return(true).AnyTimes()
 	invoker.EXPECT().GetUrl().Return(failfastUrl).AnyTimes()
 
 	mockResult := &protocol.RPCResult{Rest: rest{tried: 0, success: true}}
@@ -87,6 +89,7 @@ func TestFailfastInvokeFail(t *testing.T) {
 	invoker := mock.NewMockInvoker(ctrl)
 	clusterInvoker := registerFailfast(invoker)
 
+	invoker.EXPECT().IsAvailable().Return(true).AnyTimes()
 	invoker.EXPECT().GetUrl().Return(failfastUrl).AnyTimes()
 
 	mockResult := &protocol.RPCResult{Err: perrors.New("error")}

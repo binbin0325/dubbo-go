@@ -18,23 +18,29 @@
 package zookeeper
 
 import (
+	"encoding/json"
 	"strings"
 	"time"
 )
 
 import (
-	"github.com/apache/dubbo-go/common"
-	"github.com/apache/dubbo-go/common/constant"
-	"github.com/apache/dubbo-go/common/extension"
-	"github.com/apache/dubbo-go/metadata/identifier"
-	"github.com/apache/dubbo-go/metadata/report"
-	"github.com/apache/dubbo-go/metadata/report/factory"
-	"github.com/apache/dubbo-go/remoting/zookeeper"
+	"github.com/dubbogo/go-zookeeper/zk"
+
+	gxset "github.com/dubbogo/gost/container/set"
+	gxzookeeper "github.com/dubbogo/gost/database/kv/zk"
 )
 
-var (
-	emptyStrSlice = make([]string, 0)
+import (
+	"dubbo.apache.org/dubbo-go/v3/common"
+	"dubbo.apache.org/dubbo-go/v3/common/constant"
+	"dubbo.apache.org/dubbo-go/v3/common/extension"
+	"dubbo.apache.org/dubbo-go/v3/common/logger"
+	"dubbo.apache.org/dubbo-go/v3/metadata/identifier"
+	"dubbo.apache.org/dubbo-go/v3/metadata/report"
+	"dubbo.apache.org/dubbo-go/v3/metadata/report/factory"
 )
+
+var emptyStrSlice = make([]string, 0)
 
 func init() {
 	mf := &zookeeperMetadataReportFactory{}
@@ -46,8 +52,38 @@ func init() {
 // zookeeperMetadataReport is the implementation of
 // MetadataReport based on zookeeper.
 type zookeeperMetadataReport struct {
-	client  *zookeeper.ZookeeperClient
+	client  *gxzookeeper.ZookeeperClient
 	rootDir string
+}
+
+// GetAppMetadata get metadata info from zookeeper
+func (m *zookeeperMetadataReport) GetAppMetadata(metadataIdentifier *identifier.SubscriberMetadataIdentifier) (*common.MetadataInfo, error) {
+	k := m.rootDir + metadataIdentifier.GetFilePathKey()
+	data, _, err := m.client.GetContent(k)
+	if err != nil {
+		return nil, err
+	}
+	var metadataInfo common.MetadataInfo
+	err = json.Unmarshal(data, &metadataInfo)
+	if err != nil {
+		return nil, err
+	}
+	return &metadataInfo, nil
+}
+
+// PublishAppMetadata publish metadata info to zookeeper
+func (m *zookeeperMetadataReport) PublishAppMetadata(metadataIdentifier *identifier.SubscriberMetadataIdentifier, info *common.MetadataInfo) error {
+	k := m.rootDir + metadataIdentifier.GetFilePathKey()
+	data, err := json.Marshal(info)
+	if err != nil {
+		return err
+	}
+	err = m.client.CreateWithValue(k, data)
+	if err == zk.ErrNodeExists {
+		logger.Debugf("Try to create the node data failed. In most cases, it's not a problem. ")
+		return nil
+	}
+	return err
 }
 
 // StoreProviderMetadata stores the metadata.
@@ -63,7 +99,7 @@ func (m *zookeeperMetadataReport) StoreConsumerMetadata(consumerMetadataIdentifi
 }
 
 // SaveServiceMetadata saves the metadata.
-func (m *zookeeperMetadataReport) SaveServiceMetadata(metadataIdentifier *identifier.ServiceMetadataIdentifier, url common.URL) error {
+func (m *zookeeperMetadataReport) SaveServiceMetadata(metadataIdentifier *identifier.ServiceMetadataIdentifier, url *common.URL) error {
 	k := m.rootDir + metadataIdentifier.GetFilePathKey()
 	return m.client.CreateWithValue(k, []byte(url.String()))
 }
@@ -107,15 +143,48 @@ func (m *zookeeperMetadataReport) GetServiceDefinition(metadataIdentifier *ident
 	return string(v), err
 }
 
-type zookeeperMetadataReportFactory struct {
+// RegisterServiceAppMapping map the specified Dubbo service interface to current Dubbo app name
+func (m *zookeeperMetadataReport) RegisterServiceAppMapping(key string, group string, value string) error {
+	path := m.rootDir + group + constant.PATH_SEPARATOR + key
+	v, state, err := m.client.GetContent(path)
+	if err == zk.ErrNoNode {
+		return m.client.CreateWithValue(path, []byte(value))
+	} else if err != nil {
+		return err
+	}
+	oldValue := string(v)
+	if strings.Contains(oldValue, value) {
+		return nil
+	}
+	value = oldValue + constant.COMMA_SEPARATOR + value
+	_, err = m.client.SetContent(path, []byte(value), state.Version)
+	return err
 }
+
+// GetServiceAppMapping get the app names from the specified Dubbo service interface
+func (m *zookeeperMetadataReport) GetServiceAppMapping(key string, group string) (*gxset.HashSet, error) {
+	path := m.rootDir + group + constant.PATH_SEPARATOR + key
+	v, _, err := m.client.GetContent(path)
+	if err != nil {
+		return nil, err
+	}
+	appNames := strings.Split(string(v), constant.COMMA_SEPARATOR)
+	set := gxset.NewSet()
+	for _, e := range appNames {
+		set.Add(e)
+	}
+	return set, nil
+}
+
+type zookeeperMetadataReportFactory struct{}
 
 // nolint
 func (mf *zookeeperMetadataReportFactory) CreateMetadataReport(url *common.URL) report.MetadataReport {
-	client, err := zookeeper.NewZookeeperClient(
+	client, err := gxzookeeper.NewZookeeperClient(
 		"zookeeperMetadataReport",
 		strings.Split(url.Location, ","),
-		15*time.Second,
+		false,
+		gxzookeeper.WithZkTimeOut(15*time.Second),
 	)
 	if err != nil {
 		panic(err)

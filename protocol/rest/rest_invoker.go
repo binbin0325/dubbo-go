@@ -28,11 +28,11 @@ import (
 )
 
 import (
-	"github.com/apache/dubbo-go/common"
-	"github.com/apache/dubbo-go/protocol"
-	invocation_impl "github.com/apache/dubbo-go/protocol/invocation"
-	"github.com/apache/dubbo-go/protocol/rest/client"
-	"github.com/apache/dubbo-go/protocol/rest/config"
+	"dubbo.apache.org/dubbo-go/v3/common"
+	"dubbo.apache.org/dubbo-go/v3/protocol"
+	invocation_impl "dubbo.apache.org/dubbo-go/v3/protocol/invocation"
+	"dubbo.apache.org/dubbo-go/v3/protocol/rest/client"
+	"dubbo.apache.org/dubbo-go/v3/protocol/rest/config"
 )
 
 // nolint
@@ -43,7 +43,7 @@ type RestInvoker struct {
 }
 
 // NewRestInvoker returns a RestInvoker
-func NewRestInvoker(url common.URL, client *client.RestClient, restMethodConfig map[string]*config.RestMethodConfig) *RestInvoker {
+func NewRestInvoker(url *common.URL, client *client.RestClient, restMethodConfig map[string]*config.RestMethodConfig) *RestInvoker {
 	return &RestInvoker{
 		BaseInvoker:         *protocol.NewBaseInvoker(url),
 		client:              *client,
@@ -83,7 +83,7 @@ func (ri *RestInvoker) Invoke(ctx context.Context, invocation protocol.Invocatio
 		body = inv.Arguments()[methodConfig.Body]
 	}
 	req := &client.RestClientRequest{
-		Location:    ri.GetUrl().Location,
+		Location:    ri.GetURL().Location,
 		Method:      methodConfig.MethodType,
 		Path:        methodConfig.Path,
 		PathParams:  pathParams,

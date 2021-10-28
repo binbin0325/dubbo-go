@@ -26,32 +26,21 @@ import (
 )
 
 import (
-	"github.com/dubbogo/gost/container/set"
-	"github.com/dubbogo/gost/page"
-	perrors "github.com/pkg/errors"
+	gxset "github.com/dubbogo/gost/container/set"
+	gxzookeeper "github.com/dubbogo/gost/database/kv/zk"
+	gxpage "github.com/dubbogo/gost/hash/page"
 )
 
 import (
-	"github.com/apache/dubbo-go/common"
-	"github.com/apache/dubbo-go/common/constant"
-	"github.com/apache/dubbo-go/common/extension"
-	"github.com/apache/dubbo-go/common/logger"
-	"github.com/apache/dubbo-go/config"
-	"github.com/apache/dubbo-go/registry"
-	"github.com/apache/dubbo-go/remoting"
-	"github.com/apache/dubbo-go/remoting/zookeeper"
-	"github.com/apache/dubbo-go/remoting/zookeeper/curator_discovery"
-)
-
-const (
-	// RegistryZkClient zk client name
-	ServiceDiscoveryZkClient = "zk service discovery"
-)
-
-var (
-	// 16 would be enough. We won't use concurrentMap because in most cases, there are not race condition
-	instanceMap = make(map[string]registry.ServiceDiscovery, 16)
-	initLock    sync.Mutex
+	"dubbo.apache.org/dubbo-go/v3/common"
+	"dubbo.apache.org/dubbo-go/v3/common/constant"
+	"dubbo.apache.org/dubbo-go/v3/common/extension"
+	"dubbo.apache.org/dubbo-go/v3/common/logger"
+	"dubbo.apache.org/dubbo-go/v3/config"
+	"dubbo.apache.org/dubbo-go/v3/registry"
+	"dubbo.apache.org/dubbo-go/v3/remoting"
+	"dubbo.apache.org/dubbo-go/v3/remoting/zookeeper"
+	"dubbo.apache.org/dubbo-go/v3/remoting/zookeeper/curator_discovery"
 )
 
 // init will put the service discovery into extension
@@ -60,69 +49,51 @@ func init() {
 }
 
 type zookeeperServiceDiscovery struct {
-	client      *zookeeper.ZookeeperClient
-	csd         *curator_discovery.ServiceDiscovery
-	listener    *zookeeper.ZkEventListener
-	url         *common.URL
-	wg          sync.WaitGroup
-	cltLock     sync.Mutex
-	listenLock  sync.Mutex
-	done        chan struct{}
-	rootPath    string
-	listenNames []string
+	client *gxzookeeper.ZookeeperClient
+	csd    *curator_discovery.ServiceDiscovery
+	// listener    *zookeeper.ZkEventListener
+	url                 *common.URL
+	wg                  sync.WaitGroup
+	cltLock             sync.Mutex
+	listenLock          sync.Mutex
+	done                chan struct{}
+	rootPath            string
+	listenNames         []string
+	instanceListenerMap map[string]*gxset.HashSet
 }
 
 // newZookeeperServiceDiscovery the constructor of newZookeeperServiceDiscovery
-func newZookeeperServiceDiscovery(name string) (registry.ServiceDiscovery, error) {
-	instance, ok := instanceMap[name]
-	if ok {
-		return instance, nil
-	}
-
-	initLock.Lock()
-	defer initLock.Unlock()
-
-	// double check
-	instance, ok = instanceMap[name]
-	if ok {
-		return instance, nil
-	}
-
-	sdc, ok := config.GetBaseConfig().GetServiceDiscoveries(name)
-	if !ok || len(sdc.RemoteRef) == 0 {
-		return nil, perrors.New("could not init the instance because the config is invalid")
-	}
-	remoteConfig, ok := config.GetBaseConfig().GetRemoteConfig(sdc.RemoteRef)
-	if !ok {
-		return nil, perrors.New("could not find the remote config for name: " + sdc.RemoteRef)
-	}
-	rootPath := remoteConfig.GetParam("rootPath", "/services")
+func newZookeeperServiceDiscovery() (registry.ServiceDiscovery, error) {
+	metadataReportConfig := config.GetMetadataReportConfg()
+	rootPath := "/services"
 	url := common.NewURLWithOptions(
 		common.WithParams(make(url.Values)),
-		common.WithPassword(remoteConfig.Password),
-		common.WithUsername(remoteConfig.Username),
-		common.WithParamsValue(constant.REGISTRY_TIMEOUT_KEY, remoteConfig.TimeoutStr))
-	url.Location = remoteConfig.Address
+		common.WithPassword(metadataReportConfig.Password),
+		common.WithUsername(metadataReportConfig.Username),
+		common.WithParamsValue(constant.REGISTRY_TIMEOUT_KEY, metadataReportConfig.Timeout))
+	url.Location = metadataReportConfig.Address
 	zksd := &zookeeperServiceDiscovery{
-		url:      url,
-		rootPath: rootPath,
+		url:                 url,
+		rootPath:            rootPath,
+		instanceListenerMap: make(map[string]*gxset.HashSet),
 	}
-	err := zookeeper.ValidateZookeeperClient(zksd, zookeeper.WithZkName(ServiceDiscoveryZkClient))
+	err := zookeeper.ValidateZookeeperClient(zksd, url.Location)
 	if err != nil {
 		return nil, err
 	}
+	zksd.WaitGroup().Add(1) // zk client start successful, then wg +1
 	go zookeeper.HandleClientRestart(zksd)
 	zksd.csd = curator_discovery.NewServiceDiscovery(zksd.client, rootPath)
 	return zksd, nil
 }
 
 // nolint
-func (zksd *zookeeperServiceDiscovery) ZkClient() *zookeeper.ZookeeperClient {
+func (zksd *zookeeperServiceDiscovery) ZkClient() *gxzookeeper.ZookeeperClient {
 	return zksd.client
 }
 
 // nolint
-func (zksd *zookeeperServiceDiscovery) SetZkClient(client *zookeeper.ZookeeperClient) {
+func (zksd *zookeeperServiceDiscovery) SetZkClient(client *gxzookeeper.ZookeeperClient) {
 	zksd.client = client
 }
 
@@ -154,8 +125,8 @@ func (zksd *zookeeperServiceDiscovery) RestartCallBack() bool {
 }
 
 // nolint
-func (zksd *zookeeperServiceDiscovery) GetUrl() common.URL {
-	return *zksd.url
+func (zksd *zookeeperServiceDiscovery) GetURL() *common.URL {
+	return zksd.url
 }
 
 // nolint
@@ -165,7 +136,7 @@ func (zksd *zookeeperServiceDiscovery) String() string {
 
 // Close client be closed
 func (zksd *zookeeperServiceDiscovery) Destroy() error {
-	zksd.client.Close()
+	zksd.csd.Close()
 	return nil
 }
 
@@ -214,7 +185,7 @@ func (zksd *zookeeperServiceDiscovery) GetInstances(serviceName string) []regist
 	if err != nil {
 		logger.Errorf("[zkServiceDiscovery] Could not query the instances for service{%s}, error = err{%v} ",
 			serviceName, err)
-		return make([]registry.ServiceInstance, 0, 0)
+		return make([]registry.ServiceInstance, 0)
 	}
 	iss := make([]registry.ServiceInstance, 0, len(criss))
 	for _, cris := range criss {
@@ -231,7 +202,7 @@ func (zksd *zookeeperServiceDiscovery) GetInstancesByPage(serviceName string, of
 	for i := offset; i < len(all) && i < offset+pageSize; i++ {
 		res = append(res, all[i])
 	}
-	return gxpage.New(offset, pageSize, res, len(all))
+	return gxpage.NewPage(offset, pageSize, res, len(all))
 }
 
 // GetHealthyInstancesByPage will return the instance
@@ -254,7 +225,7 @@ func (zksd *zookeeperServiceDiscovery) GetHealthyInstancesByPage(serviceName str
 		}
 		i++
 	}
-	return gxpage.New(offset, pageSize, res, len(all))
+	return gxpage.NewPage(offset, pageSize, res, len(all))
 }
 
 // GetRequestInstances will return the instances
@@ -267,26 +238,35 @@ func (zksd *zookeeperServiceDiscovery) GetRequestInstances(serviceNames []string
 }
 
 // AddListener ListenServiceEvent will add a data listener in service
-func (zksd *zookeeperServiceDiscovery) AddListener(listener *registry.ServiceInstancesChangedListener) error {
+func (zksd *zookeeperServiceDiscovery) AddListener(listener registry.ServiceInstancesChangedListener) error {
 	zksd.listenLock.Lock()
 	defer zksd.listenLock.Unlock()
-	zksd.listenNames = append(zksd.listenNames, listener.ServiceName)
-	zksd.csd.ListenServiceEvent(listener.ServiceName, zksd)
-	return nil
-}
 
-func (zksd *zookeeperServiceDiscovery) DispatchEventByServiceName(serviceName string) error {
-	return zksd.DispatchEventForInstances(serviceName, zksd.GetInstances(serviceName))
-}
+	for _, t := range listener.GetServiceNames().Values() {
+		serviceName, ok := t.(string)
+		if !ok {
+			logger.Errorf("service name error %s", t)
+			continue
+		}
+		zksd.listenNames = append(zksd.listenNames, serviceName)
+		listenerSet, found := zksd.instanceListenerMap[serviceName]
+		if !found {
+			listenerSet = gxset.NewSet(listener)
+			listenerSet.Add(listener)
+			zksd.instanceListenerMap[serviceName] = listenerSet
+		} else {
+			listenerSet.Add(listener)
+		}
+	}
 
-// DispatchEventForInstances dispatch ServiceInstancesChangedEvent
-func (zksd *zookeeperServiceDiscovery) DispatchEventForInstances(serviceName string, instances []registry.ServiceInstance) error {
-	return zksd.DispatchEvent(registry.NewServiceInstancesChangedEvent(serviceName, instances))
-}
-
-// nolint
-func (zksd *zookeeperServiceDiscovery) DispatchEvent(event *registry.ServiceInstancesChangedEvent) error {
-	extension.GetGlobalDispatcher().Dispatch(event)
+	for _, t := range listener.GetServiceNames().Values() {
+		serviceName, ok := t.(string)
+		if !ok {
+			logger.Errorf("service name error %s", t)
+			continue
+		}
+		zksd.csd.ListenServiceEvent(serviceName, zksd)
+	}
 	return nil
 }
 
@@ -297,7 +277,15 @@ func (zksd *zookeeperServiceDiscovery) DataChange(eventType remoting.Event) bool
 	path = strings.TrimPrefix(path, constant.PATH_SEPARATOR)
 	// get service name in zk path
 	serviceName := strings.Split(path, constant.PATH_SEPARATOR)[0]
-	err := zksd.DispatchEventByServiceName(serviceName)
+
+	var err error
+	instances := zksd.GetInstances(serviceName)
+	for _, lis := range zksd.instanceListenerMap[serviceName].Values() {
+		var instanceListener registry.ServiceInstancesChangedListener
+		instanceListener = lis.(registry.ServiceInstancesChangedListener)
+		err = instanceListener.OnEvent(registry.NewServiceInstancesChangedEvent(serviceName, instances))
+	}
+
 	if err != nil {
 		logger.Errorf("[zkServiceDiscovery] DispatchEventByServiceName{%s} error = err{%v}", serviceName, err)
 		return false
@@ -312,9 +300,10 @@ func (zksd *zookeeperServiceDiscovery) toCuratorInstance(instance registry.Servi
 	pl["id"] = id
 	pl["name"] = instance.GetServiceName()
 	pl["metadata"] = instance.GetMetadata()
+	pl["@class"] = "org.apache.dubbo.registry.zookeeper.ZookeeperInstance"
 	cuis := &curator_discovery.ServiceInstance{
 		Name:                instance.GetServiceName(),
-		Id:                  id,
+		ID:                  id,
 		Address:             instance.GetHost(),
 		Port:                instance.GetPort(),
 		Payload:             pl,
@@ -327,12 +316,12 @@ func (zksd *zookeeperServiceDiscovery) toCuratorInstance(instance registry.Servi
 func (zksd *zookeeperServiceDiscovery) toZookeeperInstance(cris *curator_discovery.ServiceInstance) registry.ServiceInstance {
 	pl, ok := cris.Payload.(map[string]interface{})
 	if !ok {
-		logger.Errorf("[zkServiceDiscovery] toZookeeperInstance{%s} payload is not map[string]interface{}", cris.Id)
+		logger.Errorf("[zkServiceDiscovery] toZookeeperInstance{%s} payload is not map[string]interface{}", cris.ID)
 		return nil
 	}
 	mdi, ok := pl["metadata"].(map[string]interface{})
 	if !ok {
-		logger.Errorf("[zkServiceDiscovery] toZookeeperInstance{%s} metadata is not map[string]interface{}", cris.Id)
+		logger.Errorf("[zkServiceDiscovery] toZookeeperInstance{%s} metadata is not map[string]interface{}", cris.ID)
 		return nil
 	}
 	md := make(map[string]string, len(mdi))
@@ -340,7 +329,7 @@ func (zksd *zookeeperServiceDiscovery) toZookeeperInstance(cris *curator_discove
 		md[k] = fmt.Sprint(v)
 	}
 	return &registry.DefaultServiceInstance{
-		Id:          cris.Id,
+		ID:          cris.ID,
 		ServiceName: cris.Name,
 		Host:        cris.Address,
 		Port:        cris.Port,

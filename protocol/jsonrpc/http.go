@@ -34,29 +34,26 @@ import (
 
 import (
 	"github.com/opentracing/opentracing-go"
+
 	perrors "github.com/pkg/errors"
 )
 
 import (
-	"github.com/apache/dubbo-go/common"
-	"github.com/apache/dubbo-go/common/constant"
-	"github.com/apache/dubbo-go/common/logger"
+	"dubbo.apache.org/dubbo-go/v3/common"
+	"dubbo.apache.org/dubbo-go/v3/common/constant"
+	"dubbo.apache.org/dubbo-go/v3/common/logger"
 )
-
-// ////////////////////////////////////////////
-// Request
-// ////////////////////////////////////////////
 
 // Request is HTTP protocol request
 type Request struct {
-	ID          int64
-	group       string
-	protocol    string
-	version     string
-	service     string
-	method      string
-	args        interface{}
-	contentType string
+	ID       int64
+	group    string
+	protocol string
+	version  string
+	service  string
+	method   string
+	args     interface{}
+	// contentType string
 }
 
 // ////////////////////////////////////////////
@@ -101,8 +98,7 @@ func NewHTTPClient(opt *HTTPOptions) *HTTPClient {
 }
 
 // NewRequest creates a new HTTP request with @service ,@method and @arguments.
-func (c *HTTPClient) NewRequest(service common.URL, method string, args interface{}) *Request {
-
+func (c *HTTPClient) NewRequest(service *common.URL, method string, args interface{}) *Request {
 	return &Request{
 		ID:       atomic.AddInt64(&c.ID, 1),
 		group:    service.GetParam(constant.GROUP_KEY, ""),
@@ -115,7 +111,7 @@ func (c *HTTPClient) NewRequest(service common.URL, method string, args interfac
 }
 
 // Call makes a HTTP call with @ctx , @service ,@req and @rsp
-func (c *HTTPClient) Call(ctx context.Context, service common.URL, req *Request, rsp interface{}) error {
+func (c *HTTPClient) Call(ctx context.Context, service *common.URL, req *Request, rsp interface{}) error {
 	// header
 	httpHeader := http.Header{}
 	httpHeader.Set("Content-Type", "application/json")
@@ -181,15 +177,17 @@ func (c *HTTPClient) Do(addr, path string, httpHeader http.Header, body []byte) 
 		return nil, perrors.WithStack(err)
 	}
 	defer tcpConn.Close()
-	setNetConnTimeout := func(conn net.Conn, timeout time.Duration) {
+	setNetConnTimeout := func(conn net.Conn, timeout time.Duration) error {
 		t := time.Time{}
 		if timeout > time.Duration(0) {
 			t = time.Now().Add(timeout)
 		}
 
-		conn.SetDeadline(t)
+		return conn.SetDeadline(t)
 	}
-	setNetConnTimeout(tcpConn, c.options.HTTPTimeout)
+	if err = setNetConnTimeout(tcpConn, c.options.HTTPTimeout); err != nil {
+		return nil, err
+	}
 
 	if _, err = reqBuf.WriteTo(tcpConn); err != nil {
 		return nil, perrors.WithStack(err)

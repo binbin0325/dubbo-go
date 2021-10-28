@@ -26,17 +26,19 @@ import (
 
 import (
 	gxset "github.com/dubbogo/gost/container/set"
+
 	perrors "github.com/pkg/errors"
+
 	"github.com/zouyx/agollo/v3"
 	agolloConstant "github.com/zouyx/agollo/v3/constant"
 	"github.com/zouyx/agollo/v3/env/config"
 )
 
 import (
-	"github.com/apache/dubbo-go/common"
-	"github.com/apache/dubbo-go/common/constant"
-	cc "github.com/apache/dubbo-go/config_center"
-	"github.com/apache/dubbo-go/config_center/parser"
+	"dubbo.apache.org/dubbo-go/v3/common"
+	"dubbo.apache.org/dubbo-go/v3/common/constant"
+	cc "dubbo.apache.org/dubbo-go/v3/config_center"
+	"dubbo.apache.org/dubbo-go/v3/config_center/parser"
 )
 
 const (
@@ -45,6 +47,7 @@ const (
 )
 
 type apolloConfiguration struct {
+	cc.BaseDynamicConfiguration
 	url *common.URL
 
 	listeners sync.Map
@@ -100,7 +103,7 @@ func (c *apolloConfiguration) RemoveListener(key string, listener cc.Configurati
 }
 
 func getProperties(namespace string) string {
-	return getNamespaceName(namespace, agolloConstant.Properties)
+	return getNamespaceName(namespace, agolloConstant.YAML)
 }
 
 func getNamespaceName(namespace string, configFileFormat agolloConstant.ConfigFileFormat) string {
@@ -108,11 +111,11 @@ func getNamespaceName(namespace string, configFileFormat agolloConstant.ConfigFi
 }
 
 func (c *apolloConfiguration) GetInternalProperty(key string, opts ...cc.Option) (string, error) {
-	config := agollo.GetConfig(c.appConf.NamespaceName)
-	if config == nil {
+	newConfig := agollo.GetConfig(c.appConf.NamespaceName)
+	if newConfig == nil {
 		return "", perrors.New(fmt.Sprintf("nothing in namespace:%s ", key))
 	}
-	return config.GetStringValue(key, ""), nil
+	return newConfig.GetStringValue(key, ""), nil
 }
 
 func (c *apolloConfiguration) GetRule(key string, opts ...cc.Option) (string, error) {
@@ -131,23 +134,33 @@ func (c *apolloConfiguration) GetConfigKeysByGroup(group string) (*gxset.HashSet
 
 func (c *apolloConfiguration) GetProperties(key string, opts ...cc.Option) (string, error) {
 	/**
-	 * when group is not null, we are getting startup configs(config file) from Config Center, for example:
+	 * when group is not null, we are getting startup configs(config file) from ShutdownConfig Center, for example:
 	 * key=dubbo.propertie
 	 */
-	config := agollo.GetConfig(key)
-	if config == nil {
+	if key == "" {
+		key = c.appConf.NamespaceName
+	}
+	tmpConfig := agollo.GetConfig(key)
+	if tmpConfig == nil {
 		return "", perrors.New(fmt.Sprintf("nothing in namespace:%s ", key))
 	}
-	return config.GetContent(), nil
+
+	content := tmpConfig.GetContent()
+	b := []byte(content)
+	if len(b) == 0 {
+		return "", perrors.New(fmt.Sprintf("nothing in namespace:%s ", key))
+	}
+
+	content = string(b[8:]) //remove defalut content= prefix
+	return content, nil
 }
 
 func (c *apolloConfiguration) getAddressWithProtocolPrefix(url *common.URL) string {
 	address := url.Location
 	converted := address
 	if len(address) != 0 {
-		reg := regexp.MustCompile("\\s+")
-		address = reg.ReplaceAllString(address, "")
-		parts := strings.Split(address, ",")
+		addr := regexp.MustCompile(`\s+`).ReplaceAllString(address, "")
+		parts := strings.Split(addr, ",")
 		addrs := make([]string, 0)
 		for _, part := range parts {
 			addr := part

@@ -20,13 +20,14 @@ package apollo
 import (
 	"github.com/zouyx/agollo/v3"
 	"github.com/zouyx/agollo/v3/storage"
+
 	"gopkg.in/yaml.v2"
 )
 
 import (
-	"github.com/apache/dubbo-go/common/logger"
-	"github.com/apache/dubbo-go/config_center"
-	"github.com/apache/dubbo-go/remoting"
+	"dubbo.apache.org/dubbo-go/v3/common/logger"
+	"dubbo.apache.org/dubbo-go/v3/config_center"
+	"dubbo.apache.org/dubbo-go/v3/remoting"
 )
 
 type apolloListener struct {
@@ -36,13 +37,12 @@ type apolloListener struct {
 // nolint
 func newApolloListener() *apolloListener {
 	return &apolloListener{
-		listeners: make(map[config_center.ConfigurationListener]struct{}, 0),
+		listeners: make(map[config_center.ConfigurationListener]struct{}),
 	}
 }
 
 // OnChange process each listener
 func (a *apolloListener) OnChange(changeEvent *storage.ChangeEvent) {
-
 }
 
 // OnNewestChange process each listener by all changes

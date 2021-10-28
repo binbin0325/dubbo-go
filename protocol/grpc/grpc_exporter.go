@@ -22,10 +22,10 @@ import (
 )
 
 import (
-	"github.com/apache/dubbo-go/common"
-	"github.com/apache/dubbo-go/common/constant"
-	"github.com/apache/dubbo-go/common/logger"
-	"github.com/apache/dubbo-go/protocol"
+	"dubbo.apache.org/dubbo-go/v3/common"
+	"dubbo.apache.org/dubbo-go/v3/common/constant"
+	"dubbo.apache.org/dubbo-go/v3/common/logger"
+	"dubbo.apache.org/dubbo-go/v3/protocol"
 )
 
 // nolint
@@ -42,10 +42,9 @@ func NewGrpcExporter(key string, invoker protocol.Invoker, exporterMap *sync.Map
 
 // Unexport and unregister gRPC service from registry and memory.
 func (gg *GrpcExporter) Unexport() {
-	serviceId := gg.GetInvoker().GetUrl().GetParam(constant.BEAN_NAME_KEY, "")
-	interfaceName := gg.GetInvoker().GetUrl().GetParam(constant.INTERFACE_KEY, "")
+	interfaceName := gg.GetInvoker().GetURL().GetParam(constant.INTERFACE_KEY, "")
 	gg.BaseExporter.Unexport()
-	err := common.ServiceMap.UnRegister(interfaceName, GRPC, serviceId)
+	err := common.ServiceMap.UnRegister(interfaceName, GRPC, gg.GetInvoker().GetURL().ServiceKey())
 	if err != nil {
 		logger.Errorf("[GrpcExporter.Unexport] error: %v", err)
 	}

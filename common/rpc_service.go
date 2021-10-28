@@ -31,15 +31,44 @@ import (
 )
 
 import (
-	"github.com/apache/dubbo-go/common/logger"
+	"dubbo.apache.org/dubbo-go/v3/common/logger"
 )
 
-// RPCService
+// RPCService the type alias of interface{}
+type RPCService = interface{}
+
+// ReferencedRPCService
 // rpc service interface
-type RPCService interface {
+type ReferencedRPCService interface {
 	// Reference:
 	// rpc service id or reference id
 	Reference() string
+}
+
+// GetReference return the reference id of the service.
+// If the service implemented the ReferencedRPCService interface,
+// it will call the Reference method. If not, it will
+// return the struct name as the reference id.
+func GetReference(service RPCService) string {
+	if s, ok := service.(ReferencedRPCService); ok {
+		return s.Reference()
+	}
+
+	ref := ""
+	sType := reflect.TypeOf(service)
+	kind := sType.Kind()
+	switch kind {
+	case reflect.Struct:
+		ref = sType.Name()
+	case reflect.Ptr:
+		sName := sType.Elem().Name()
+		if sName != "" {
+			ref = sName
+		} else {
+			ref = sType.Elem().Field(0).Name
+		}
+	}
+	return ref
 }
 
 // AsyncCallbackService callback interface for async
@@ -106,10 +135,10 @@ func (m *MethodType) ReplyType() reflect.Type {
 	return m.replyType
 }
 
-// SuiteContext tranfers @ctx to reflect.Value type or get it from @m.ctxType.
+// SuiteContext transfers @ctx to reflect.Value type or get it from @m.ctxType.
 func (m *MethodType) SuiteContext(ctx context.Context) reflect.Value {
-	if contextv := reflect.ValueOf(ctx); contextv.IsValid() {
-		return contextv
+	if ctxV := reflect.ValueOf(ctx); ctxV.IsValid() {
+		return ctxV
 	}
 	return reflect.Zero(m.ctxType)
 }
@@ -156,12 +185,18 @@ type serviceMap struct {
 	interfaceMap map[string][]*Service          // interface -> service
 }
 
-// GetService gets a service defination by protocol and name
-func (sm *serviceMap) GetService(protocol, name string) *Service {
+// GetService gets a service definition by protocol and name
+func (sm *serviceMap) GetService(protocol, interfaceName, group, version string) *Service {
+	serviceKey := ServiceKey(interfaceName, group, version)
+	return sm.GetServiceByServiceKey(protocol, serviceKey)
+}
+
+// GetService gets a service definition by protocol and service key
+func (sm *serviceMap) GetServiceByServiceKey(protocol, serviceKey string) *Service {
 	sm.mutex.RLock()
 	defer sm.mutex.RUnlock()
 	if s, ok := sm.serviceMap[protocol]; ok {
-		if srv, ok := s[name]; ok {
+		if srv, ok := s[serviceKey]; ok {
 			return srv
 		}
 		return nil
@@ -169,7 +204,7 @@ func (sm *serviceMap) GetService(protocol, name string) *Service {
 	return nil
 }
 
-// GetInterface gets an interface defination by interface name
+// GetInterface gets an interface definition by interface name
 func (sm *serviceMap) GetInterface(interfaceName string) []*Service {
 	sm.mutex.RLock()
 	defer sm.mutex.RUnlock()
@@ -180,7 +215,7 @@ func (sm *serviceMap) GetInterface(interfaceName string) []*Service {
 }
 
 // Register registers a service by @interfaceName and @protocol
-func (sm *serviceMap) Register(interfaceName, protocol string, rcvr RPCService) (string, error) {
+func (sm *serviceMap) Register(interfaceName, protocol, group, version string, rcvr RPCService) (string, error) {
 	if sm.serviceMap[protocol] == nil {
 		sm.serviceMap[protocol] = make(map[string]*Service)
 	}
@@ -203,8 +238,8 @@ func (sm *serviceMap) Register(interfaceName, protocol string, rcvr RPCService) 
 		return "", perrors.New(s)
 	}
 
-	sname = rcvr.Reference()
-	if server := sm.GetService(protocol, sname); server != nil {
+	sname = ServiceKey(interfaceName, group, version)
+	if server := sm.GetService(protocol, interfaceName, group, version); server != nil {
 		return "", perrors.New("service already defined: " + sname)
 	}
 	s.name = sname
@@ -228,9 +263,9 @@ func (sm *serviceMap) Register(interfaceName, protocol string, rcvr RPCService) 
 }
 
 // UnRegister cancels a service by @interfaceName, @protocol and @serviceId
-func (sm *serviceMap) UnRegister(interfaceName, protocol, serviceId string) error {
-	if protocol == "" || serviceId == "" {
-		return perrors.New("protocol or serviceName is nil")
+func (sm *serviceMap) UnRegister(interfaceName, protocol, serviceKey string) error {
+	if protocol == "" || serviceKey == "" {
+		return perrors.New("protocol or ServiceKey is nil")
 	}
 
 	var (
@@ -248,9 +283,9 @@ func (sm *serviceMap) UnRegister(interfaceName, protocol, serviceId string) erro
 		if !ok {
 			return perrors.New("no services for " + protocol)
 		}
-		s, ok := svcs[serviceId]
+		s, ok := svcs[serviceKey]
 		if !ok {
-			return perrors.New("no service for " + serviceId)
+			return perrors.New("no service for " + serviceKey)
 		}
 		svrs, ok = sm.interfaceMap[interfaceName]
 		if !ok {
@@ -271,12 +306,12 @@ func (sm *serviceMap) UnRegister(interfaceName, protocol, serviceId string) erro
 	sm.mutex.Lock()
 	defer sm.mutex.Unlock()
 	sm.interfaceMap[interfaceName] = make([]*Service, 0, len(svrs))
-	for i, _ := range svrs {
+	for i := range svrs {
 		if i != index {
 			sm.interfaceMap[interfaceName] = append(sm.interfaceMap[interfaceName], svrs[i])
 		}
 	}
-	delete(svcs, serviceId)
+	delete(svcs, serviceKey)
 	if len(sm.serviceMap[protocol]) == 0 {
 		delete(sm.serviceMap, protocol)
 	}
@@ -360,7 +395,7 @@ func suiteMethod(method reflect.Method) *MethodType {
 
 	// The latest return type of the method must be error.
 	if returnType := mtype.Out(outNum - 1); returnType != typeOfError {
-		logger.Warnf("the latest return type %s of method %q is not error", returnType, mname)
+		logger.Debugf(`"%s" method will not be exported because its last return type %v doesn't have error`, mname, returnType)
 		return nil
 	}
 

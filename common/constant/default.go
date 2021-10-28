@@ -20,7 +20,7 @@ package constant
 const (
 	DUBBO             = "dubbo"
 	PROVIDER_PROTOCOL = "provider"
-	//compatible with 2.6.x
+	// compatible with 2.6.x
 	OVERRIDE_PROTOCOL = "override"
 	EMPTY_PROTOCOL    = "empty"
 	ROUTER_PROTOCOL   = "router"
@@ -45,14 +45,16 @@ const (
 	DEFAULT_REST_CLIENT        = "resty"
 	DEFAULT_REST_SERVER        = "go-restful"
 	DEFAULT_PORT               = 20000
+	DEFAULT_METADATAPORT       = 20005
+	DEFAULT_SERIALIZATION      = HESSIAN2_SERIALIZATION
 )
 
 const (
 	DEFAULT_KEY               = "default"
 	PREFIX_DEFAULT_KEY        = "default."
-	DEFAULT_SERVICE_FILTERS   = "echo,token,accesslog,tps,generic_service,execute,pshutdown"
-	DEFAULT_REFERENCE_FILTERS = "cshutdown"
-	GENERIC_REFERENCE_FILTERS = "generic"
+	DEFAULT_SERVICE_FILTERS   = EchoFilterKey + "," + MetricsFilterKey + "," + TokenFilterKey + "," + AccessLogFilterKey + "," + TpsLimitFilterKey + "," + GenericServiceFilterKey + "," + ExecuteLimitFilterKey + "," + GracefulShutdownProviderFilterKey
+	DEFAULT_REFERENCE_FILTERS = GracefulShutdownConsumerFilterKey
+	GENERIC_REFERENCE_FILTERS = GenericFilterKey
 	GENERIC                   = "$invoke"
 	ECHO                      = "$echo"
 )
@@ -80,9 +82,16 @@ const (
 
 const (
 	SIMPLE_METADATA_SERVICE_NAME = "MetadataService"
-	DEFAULT_REVIESION            = "N/A"
+	DEFAULT_REVISION             = "N/A"
 )
 
 const (
 	SERVICE_DISCOVERY_DEFAULT_GROUP = "DEFAULT_GROUP"
+)
+
+const (
+	DEFAULT_PROVIDER_CONF_FILE_PATH = "../profiles/dev/server.yml"
+	DEFAULT_CONSUMER_CONF_FILE_PATH = "../profiles/dev/client.yml"
+	DEFAULT_LOG_CONF_FILE_PATH      = "../profiles/dev/log.yml"
+	DEFAULT_ROUTER_CONF_FILE_PATH   = "../profiles/dev/router.yml"
 )

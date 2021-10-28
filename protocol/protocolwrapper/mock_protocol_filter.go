@@ -22,8 +22,8 @@ import (
 )
 
 import (
-	"github.com/apache/dubbo-go/common"
-	"github.com/apache/dubbo-go/protocol"
+	"dubbo.apache.org/dubbo-go/v3/common"
+	"dubbo.apache.org/dubbo-go/v3/protocol"
 )
 
 type mockProtocolFilter struct{}
@@ -39,11 +39,10 @@ func (pfw *mockProtocolFilter) Export(invoker protocol.Invoker) protocol.Exporte
 }
 
 // Refer a mock remote service
-func (pfw *mockProtocolFilter) Refer(url common.URL) protocol.Invoker {
+func (pfw *mockProtocolFilter) Refer(url *common.URL) protocol.Invoker {
 	return protocol.NewBaseInvoker(url)
 }
 
 // Destroy will do nothing
 func (pfw *mockProtocolFilter) Destroy() {
-	return
 }

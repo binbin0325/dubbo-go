@@ -23,14 +23,15 @@ import (
 
 import (
 	gxset "github.com/dubbogo/gost/container/set"
+
 	"gopkg.in/yaml.v2"
 )
 
 import (
-	"github.com/apache/dubbo-go/common"
-	"github.com/apache/dubbo-go/common/constant"
-	"github.com/apache/dubbo-go/config_center/parser"
-	"github.com/apache/dubbo-go/remoting"
+	"dubbo.apache.org/dubbo-go/v3/common"
+	"dubbo.apache.org/dubbo-go/v3/common/constant"
+	"dubbo.apache.org/dubbo-go/v3/config_center/parser"
+	"dubbo.apache.org/dubbo-go/v3/remoting"
 )
 
 // MockDynamicConfigurationFactory defines content
@@ -83,7 +84,6 @@ func (f *MockDynamicConfigurationFactory) GetDynamicConfiguration(_ *common.URL)
 		dynamicConfiguration.content = f.Content
 	}
 	return dynamicConfiguration, err
-
 }
 
 // PublishConfig will publish the config with the (key, group, value) pair
@@ -98,6 +98,7 @@ func (c *MockDynamicConfiguration) GetConfigKeysByGroup(group string) (*gxset.Ha
 
 // MockDynamicConfiguration uses to parse content and defines listener
 type MockDynamicConfiguration struct {
+	BaseDynamicConfiguration
 	parser   parser.ConfigurationParser
 	content  string
 	listener map[string]ConfigurationListener
@@ -115,7 +116,6 @@ func (c *MockDynamicConfiguration) RemoveListener(_ string, _ ConfigurationListe
 
 // GetConfig returns content of MockDynamicConfiguration
 func (c *MockDynamicConfiguration) GetConfig(_ string, _ ...Option) (string, error) {
-
 	return c.content, nil
 }
 
@@ -157,7 +157,8 @@ func (c *MockDynamicConfiguration) MockServiceConfigEvent() {
 		Key:           mockServiceName,
 		Enabled:       true,
 		Configs: []parser.ConfigItem{
-			{Type: parser.GeneralType,
+			{
+				Type:       parser.GeneralType,
 				Enabled:    true,
 				Addresses:  []string{"0.0.0.0"},
 				Services:   []string{mockServiceName},
@@ -179,7 +180,8 @@ func (c *MockDynamicConfiguration) MockApplicationConfigEvent() {
 		Key:           mockServiceName,
 		Enabled:       true,
 		Configs: []parser.ConfigItem{
-			{Type: parser.ScopeApplication,
+			{
+				Type:       parser.ScopeApplication,
 				Enabled:    true,
 				Addresses:  []string{"0.0.0.0"},
 				Services:   []string{mockServiceName},

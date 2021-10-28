@@ -25,14 +25,15 @@ import (
 )
 
 import (
-	"github.com/coreos/etcd/embed"
 	"github.com/stretchr/testify/assert"
+
+	"go.etcd.io/etcd/server/v3/embed"
 )
 
 import (
-	"github.com/apache/dubbo-go/common"
-	"github.com/apache/dubbo-go/common/constant"
-	"github.com/apache/dubbo-go/metadata/identifier"
+	"dubbo.apache.org/dubbo-go/v3/common"
+	"dubbo.apache.org/dubbo-go/v3/common/constant"
+	"dubbo.apache.org/dubbo-go/v3/metadata/identifier"
 )
 
 const defaultEtcdV3WorkDir = "/tmp/default-dubbo-go-registry.etcd"
@@ -60,7 +61,7 @@ func TestEtcdMetadataReportFactory_CreateMetadataReport(t *testing.T) {
 		t.Fatal(err)
 	}
 	metadataReportFactory := &etcdMetadataReportFactory{}
-	metadataReport := metadataReportFactory.CreateMetadataReport(&url)
+	metadataReport := metadataReportFactory.CreateMetadataReport(url)
 	assert.NotNil(t, metadataReport)
 	e.Close()
 }
@@ -72,7 +73,7 @@ func TestEtcdMetadataReport_CRUD(t *testing.T) {
 		t.Fatal(err)
 	}
 	metadataReportFactory := &etcdMetadataReportFactory{}
-	metadataReport := metadataReportFactory.CreateMetadataReport(&url)
+	metadataReport := metadataReportFactory.CreateMetadataReport(url)
 	assert.NotNil(t, metadataReport)
 
 	err = metadataReport.StoreConsumerMetadata(newMetadataIdentifier("consumer"), "consumer metadata")
@@ -82,8 +83,9 @@ func TestEtcdMetadataReport_CRUD(t *testing.T) {
 	assert.Nil(t, err)
 
 	serviceMi := newServiceMetadataIdentifier()
-	serviceUrl, _ := common.NewURL("registry://localhost:8848", common.WithParamsValue(constant.ROLE_KEY, strconv.Itoa(common.PROVIDER)))
-	metadataReport.SaveServiceMetadata(serviceMi, serviceUrl)
+	serviceUrl, err := common.NewURL("registry://localhost:8848", common.WithParamsValue(constant.ROLE_KEY, strconv.Itoa(common.PROVIDER)))
+	assert.Nil(t, err)
+	err = metadataReport.SaveServiceMetadata(serviceMi, serviceUrl)
 	assert.Nil(t, err)
 
 	subMi := newSubscribeMetadataIdentifier()
@@ -93,18 +95,62 @@ func TestEtcdMetadataReport_CRUD(t *testing.T) {
 	err = metadataReport.SaveSubscribedData(subMi, string(urls))
 	assert.Nil(t, err)
 
+	serviceUrl, _ = common.NewURL("dubbo://127.0.0.1:20000/com.ikurento.user.UserProvider?interface=com.ikurento.user.UserProvider&group=&version=2.6.0")
+	metadataInfo := common.NewMetadataInfo(subMi.Application, "", map[string]*common.ServiceInfo{
+		"com.ikurento.user.UserProvider": common.NewServiceInfoWithURL(serviceUrl),
+	})
 	err = metadataReport.RemoveServiceMetadata(serviceMi)
 	assert.Nil(t, err)
+	err = metadataReport.PublishAppMetadata(subMi, metadataInfo)
+	assert.Nil(t, err)
+
+	mdInfo, err := metadataReport.GetAppMetadata(subMi)
+	assert.Nil(t, err)
+	assert.Equal(t, metadataInfo.App, mdInfo.App)
+	assert.Equal(t, metadataInfo.Revision, mdInfo.Revision)
+	assert.Equal(t, 1, len(mdInfo.Services))
+	assert.NotNil(t, metadataInfo.Services["com.ikurento.user.UserProvider"])
+
+	e.Close()
+}
+
+func TestEtcdMetadataReport_ServiceAppMapping(t *testing.T) {
+	e := initEtcd(t)
+	url, err := common.NewURL("registry://127.0.0.1:2379", common.WithParamsValue(constant.ROLE_KEY, strconv.Itoa(common.PROVIDER)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	metadataReportFactory := &etcdMetadataReportFactory{}
+	metadataReport := metadataReportFactory.CreateMetadataReport(url)
+	assert.NotNil(t, metadataReport)
+
+	_, err = metadataReport.GetServiceAppMapping("com.apache.dubbo.sample.basic.IGreeter", "mapping")
+	assert.NotNil(t, err)
+
+	err = metadataReport.RegisterServiceAppMapping("com.apache.dubbo.sample.basic.IGreeter", "mapping", "demo_provider")
+	assert.Nil(t, err)
+	set, err := metadataReport.GetServiceAppMapping("com.apache.dubbo.sample.basic.IGreeter", "mapping")
+	assert.Nil(t, err)
+	assert.Equal(t, 1, set.Size())
+
+	err = metadataReport.RegisterServiceAppMapping("com.apache.dubbo.sample.basic.IGreeter", "mapping", "demo_provider2")
+	assert.Nil(t, err)
+	err = metadataReport.RegisterServiceAppMapping("com.apache.dubbo.sample.basic.IGreeter", "mapping", "demo_provider")
+	assert.Nil(t, err)
+	set, err = metadataReport.GetServiceAppMapping("com.apache.dubbo.sample.basic.IGreeter", "mapping")
+	assert.Nil(t, err)
+	assert.Equal(t, 2, set.Size())
 
 	e.Close()
 }
 
 func newSubscribeMetadataIdentifier() *identifier.SubscriberMetadataIdentifier {
 	return &identifier.SubscriberMetadataIdentifier{
-		Revision:           "subscribe",
-		MetadataIdentifier: *newMetadataIdentifier("provider"),
+		Revision: "subscribe",
+		BaseApplicationMetadataIdentifier: identifier.BaseApplicationMetadataIdentifier{
+			Application: "provider",
+		},
 	}
-
 }
 
 func newServiceMetadataIdentifier() *identifier.ServiceMetadataIdentifier {

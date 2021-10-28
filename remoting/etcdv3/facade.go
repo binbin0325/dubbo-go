@@ -23,76 +23,37 @@ import (
 )
 
 import (
-	"github.com/apache/dubbo-getty"
-	perrors "github.com/pkg/errors"
+	gxetcd "github.com/dubbogo/gost/database/kv/etcd/v3"
 )
 
 import (
-	"github.com/apache/dubbo-go/common"
-	"github.com/apache/dubbo-go/common/constant"
-	"github.com/apache/dubbo-go/common/logger"
+	"dubbo.apache.org/dubbo-go/v3/common"
+	"dubbo.apache.org/dubbo-go/v3/common/logger"
 )
 
 type clientFacade interface {
-	Client() *Client
-	SetClient(*Client)
+	Client() *gxetcd.Client
+	SetClient(client *gxetcd.Client)
 	ClientLock() *sync.Mutex
-	WaitGroup() *sync.WaitGroup //for wait group control, etcd client listener & etcd client container
-	Done() chan struct{}        //for etcd client control
+	WaitGroup() *sync.WaitGroup // for wait group control, etcd client listener & etcd client container
+	Done() chan struct{}        // for etcd client control
 	RestartCallBack() bool
 	common.Node
 }
 
 // HandleClientRestart keeps the connection between client and server
+// This method should be used only once. You can use handleClientRestart() in package registry.
 func HandleClientRestart(r clientFacade) {
-
-	var (
-		err       error
-		failTimes int
-	)
-
 	defer r.WaitGroup().Done()
-LOOP:
 	for {
 		select {
+		case <-r.Client().GetCtx().Done():
+			r.RestartCallBack()
+			// re-register all services
+			time.Sleep(10 * time.Microsecond)
 		case <-r.Done():
 			logger.Warnf("(ETCDV3ProviderRegistry)reconnectETCDV3 goroutine exit now...")
-			break LOOP
-			// re-register all services
-		case <-r.Client().Done():
-			r.ClientLock().Lock()
-			clientName := RegistryETCDV3Client
-			timeout, _ := time.ParseDuration(r.GetUrl().GetParam(constant.REGISTRY_TIMEOUT_KEY, constant.DEFAULT_REG_TIMEOUT))
-			endpoint := r.GetUrl().Location
-			r.Client().Close()
-			r.SetClient(nil)
-			r.ClientLock().Unlock()
-
-			// try to connect to etcd,
-			failTimes = 0
-			for {
-				select {
-				case <-r.Done():
-					logger.Warnf("(ETCDV3ProviderRegistry)reconnectETCDRegistry goroutine exit now...")
-					break LOOP
-				case <-getty.GetTimeWheel().After(timeSecondDuration(failTimes * ConnDelay)): // avoid connect frequent
-				}
-				err = ValidateClient(
-					r,
-					WithName(clientName),
-					WithEndpoints(endpoint),
-					WithTimeout(timeout),
-				)
-				logger.Infof("ETCDV3ProviderRegistry.validateETCDV3Client(etcd Addr{%s}) = error{%#v}",
-					endpoint, perrors.WithStack(err))
-				if err == nil && r.RestartCallBack() {
-					break
-				}
-				failTimes++
-				if MaxFailTimes <= failTimes {
-					failTimes = MaxFailTimes
-				}
-			}
+			return
 		}
 	}
 }

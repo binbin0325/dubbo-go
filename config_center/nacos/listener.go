@@ -26,9 +26,9 @@ import (
 )
 
 import (
-	"github.com/apache/dubbo-go/common/logger"
-	"github.com/apache/dubbo-go/config_center"
-	"github.com/apache/dubbo-go/remoting"
+	"dubbo.apache.org/dubbo-go/v3/common/logger"
+	"dubbo.apache.org/dubbo-go/v3/config_center"
+	"dubbo.apache.org/dubbo-go/v3/remoting"
 )
 
 func callback(listener config_center.ConfigurationListener, _, _, dataId, data string) {
@@ -38,8 +38,7 @@ func callback(listener config_center.ConfigurationListener, _, _, dataId, data s
 func (n *nacosDynamicConfiguration) addListener(key string, listener config_center.ConfigurationListener) {
 	_, loaded := n.keyListeners.Load(key)
 	if !loaded {
-		_, cancel := context.WithCancel(context.Background())
-		err := (*n.client.Client()).ListenConfig(vo.ConfigParam{
+		err := n.client.Client().ListenConfig(vo.ConfigParam{
 			DataId: key,
 			Group:  "dubbo",
 			OnChange: func(namespace, group, dataId, data string) {
@@ -50,13 +49,15 @@ func (n *nacosDynamicConfiguration) addListener(key string, listener config_cent
 			logger.Errorf("nacos : listen config fail, error:%v ", err)
 			return
 		}
+		_, cancel := context.WithCancel(context.Background())
 		newListener := make(map[config_center.ConfigurationListener]context.CancelFunc)
 		newListener[listener] = cancel
 		n.keyListeners.Store(key, newListener)
-	} else {
-		// TODO check goroutine alive, but this version of go_nacos_sdk is not support.
-		logger.Infof("profile:%s. this profile is already listening", key)
+		return
 	}
+
+	// TODO check goroutine alive, but this version of go_nacos_sdk is not support.
+	logger.Infof("profile:%s. this profile is already listening", key)
 }
 
 func (n *nacosDynamicConfiguration) removeListener(key string, listener config_center.ConfigurationListener) {

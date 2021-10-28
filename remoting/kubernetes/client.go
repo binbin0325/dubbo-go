@@ -25,15 +25,17 @@ import (
 
 import (
 	perrors "github.com/pkg/errors"
+
 	v1 "k8s.io/api/core/v1"
+
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/kubernetes/fake"
 )
 
 import (
-	"github.com/apache/dubbo-go/common"
-	"github.com/apache/dubbo-go/common/constant"
-	"github.com/apache/dubbo-go/common/logger"
+	"dubbo.apache.org/dubbo-go/v3/common"
+	"dubbo.apache.org/dubbo-go/v3/common/constant"
+	"dubbo.apache.org/dubbo-go/v3/common/logger"
 )
 
 type Client struct {
@@ -46,18 +48,18 @@ type Client struct {
 	controller *dubboRegistryController
 }
 
-// newClient returns Client instance for registry
-func newClient(url common.URL) (*Client, error) {
-
-	ctx, cancel := context.WithCancel(context.Background())
-
+// NewClient returns Client instance for registry
+func NewClient(url *common.URL) (*Client, error) {
 	// read type
 	r, err := strconv.Atoi(url.GetParams().Get(constant.ROLE_KEY))
 	if err != nil {
 		return nil, perrors.WithMessage(err, "atoi role")
 	}
+	ctx, cancel := context.WithCancel(context.Background())
+
 	controller, err := newDubboRegistryController(ctx, common.RoleType(r), GetInClusterKubernetesClient)
 	if err != nil {
+		cancel()
 		return nil, perrors.WithMessage(err, "new dubbo-registry controller")
 	}
 
@@ -74,9 +76,20 @@ func newClient(url common.URL) (*Client, error) {
 	return c, nil
 }
 
+func (c *Client) SetLabel(k, v string) error {
+	c.lock.Lock()
+	defer c.lock.Unlock()
+
+	if err := c.controller.assembleLabel(k, v); err != nil {
+		return perrors.WithMessagef(err, "add annotation @key = %s @value = %s", k, v)
+	}
+
+	logger.Debugf("put the @key = %s @value = %s success", k, v)
+	return nil
+}
+
 // Create creates k/v pair in watcher-set
 func (c *Client) Create(k, v string) error {
-
 	// the read current pod must be lock, protect every
 	// create operation can be atomic
 	c.lock.Lock()
@@ -92,7 +105,6 @@ func (c *Client) Create(k, v string) error {
 
 // GetChildren gets k children list from kubernetes-watcherSet
 func (c *Client) GetChildren(k string) ([]string, []string, error) {
-
 	objectList, err := c.controller.watcherSet.Get(k, true)
 	if err != nil {
 		return nil, nil, perrors.WithMessagef(err, "get children from watcherSet on (%s)", k)
@@ -111,7 +123,6 @@ func (c *Client) GetChildren(k string) ([]string, []string, error) {
 
 // Watch watches on spec key
 func (c *Client) Watch(k string) (<-chan *WatcherEvent, <-chan struct{}, error) {
-
 	w, err := c.controller.watcherSet.Watch(k, false)
 	if err != nil {
 		return nil, nil, perrors.WithMessagef(err, "watch on (%s)", k)
@@ -122,7 +133,6 @@ func (c *Client) Watch(k string) (<-chan *WatcherEvent, <-chan struct{}, error) 
 
 // WatchWithPrefix watches on spec prefix
 func (c *Client) WatchWithPrefix(prefix string) (<-chan *WatcherEvent, <-chan struct{}, error) {
-
 	w, err := c.controller.watcherSet.Watch(prefix, true)
 	if err != nil {
 		return nil, nil, perrors.WithMessagef(err, "watch on prefix (%s)", prefix)
@@ -133,7 +143,6 @@ func (c *Client) WatchWithPrefix(prefix string) (<-chan *WatcherEvent, <-chan st
 
 // if returns false, the client is die
 func (c *Client) Valid() bool {
-
 	select {
 	case <-c.Done():
 		return false
@@ -151,10 +160,9 @@ func (c *Client) Done() <-chan struct{} {
 
 // nolint
 func (c *Client) Close() {
-
 	select {
 	case <-c.ctx.Done():
-		//already stopped
+		// already stopped
 		return
 	default:
 	}
@@ -167,13 +175,12 @@ func (c *Client) Close() {
 
 // ValidateClient validates the kubernetes client
 func ValidateClient(container clientFacade) error {
-
 	client := container.Client()
 
 	// new Client
 	if client == nil || client.Valid() {
 
-		newClient, err := newClient(container.GetUrl())
+		newClient, err := NewClient(container.GetURL())
 		if err != nil {
 			logger.Warnf("new kubernetes client: %v)", err)
 			return perrors.WithMessage(err, "new kubernetes client")
@@ -186,12 +193,12 @@ func ValidateClient(container clientFacade) error {
 
 // NewMockClient exports for registry package test
 func NewMockClient(podList *v1.PodList) (*Client, error) {
-
 	ctx, cancel := context.WithCancel(context.Background())
 	controller, err := newDubboRegistryController(ctx, common.CONSUMER, func() (kubernetes.Interface, error) {
 		return fake.NewSimpleClientset(podList), nil
 	})
 	if err != nil {
+		cancel()
 		return nil, perrors.WithMessage(err, "new dubbo-registry controller")
 	}
 

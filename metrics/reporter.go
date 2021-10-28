@@ -21,8 +21,9 @@ import (
 	"context"
 	"time"
 )
+
 import (
-	"github.com/apache/dubbo-go/protocol"
+	"dubbo.apache.org/dubbo-go/v3/protocol"
 )
 
 const (

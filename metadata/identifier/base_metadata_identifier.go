@@ -18,11 +18,11 @@
 package identifier
 
 import (
-	"encoding/base64"
+	"net/url"
 )
 
 import (
-	"github.com/apache/dubbo-go/common/constant"
+	"dubbo.apache.org/dubbo-go/v3/common/constant"
 )
 
 // BaseMetadataIdentifier defined for describe the Metadata base identify
@@ -68,21 +68,14 @@ func (mdi *BaseMetadataIdentifier) getFilePathKey(params ...string) string {
 		withPathSeparator(mdi.Group) +
 		withPathSeparator(mdi.Side) +
 		joinParams(constant.PATH_SEPARATOR, params)
-
 }
 
 // serviceToPath uss URL encode to decode the @serviceInterface
 func serviceToPath(serviceInterface string) string {
 	if serviceInterface == constant.ANY_VALUE {
 		return ""
-	} else {
-		decoded, err := base64.URLEncoding.DecodeString(serviceInterface)
-		if err != nil {
-			return ""
-		}
-		return string(decoded)
 	}
-
+	return url.PathEscape(serviceInterface)
 }
 
 // withPathSeparator return "/" + @path
@@ -91,4 +84,22 @@ func withPathSeparator(path string) string {
 		path = constant.PATH_SEPARATOR + path
 	}
 	return path
+}
+
+// BaseApplicationMetadataIdentifier is the base implement of BaseApplicationMetadataIdentifier interface
+type BaseApplicationMetadataIdentifier struct {
+	Application string
+	Group       string
+}
+
+// getIdentifierKey returns string that format is application/param
+func (madi *BaseApplicationMetadataIdentifier) getIdentifierKey(params ...string) string {
+	return madi.Application + joinParams(constant.KEY_SEPARATOR, params)
+}
+
+// getFilePathKey returns string that format is metadata/application/revision
+func (madi *BaseApplicationMetadataIdentifier) getFilePathKey(params ...string) string {
+	return constant.DEFAULT_PATH_TAG +
+		withPathSeparator(madi.Application) +
+		joinParams(constant.PATH_SEPARATOR, params)
 }

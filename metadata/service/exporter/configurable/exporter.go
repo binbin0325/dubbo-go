@@ -18,17 +18,24 @@
 package configurable
 
 import (
-	"context"
+	"strconv"
 	"sync"
 )
 
 import (
-	"github.com/apache/dubbo-go/common"
-	"github.com/apache/dubbo-go/common/constant"
-	"github.com/apache/dubbo-go/common/logger"
-	"github.com/apache/dubbo-go/config"
-	"github.com/apache/dubbo-go/metadata/service"
-	"github.com/apache/dubbo-go/metadata/service/exporter"
+	"github.com/pkg/errors"
+)
+
+import (
+	"dubbo.apache.org/dubbo-go/v3/common"
+	"dubbo.apache.org/dubbo-go/v3/common/constant"
+	"dubbo.apache.org/dubbo-go/v3/common/logger"
+	"dubbo.apache.org/dubbo-go/v3/config"
+	_ "dubbo.apache.org/dubbo-go/v3/metadata/mapping/metadata"
+	"dubbo.apache.org/dubbo-go/v3/metadata/service"
+	"dubbo.apache.org/dubbo-go/v3/metadata/service/exporter"
+	_ "dubbo.apache.org/dubbo-go/v3/metadata/service/remote"
+	_ "dubbo.apache.org/dubbo-go/v3/protocol/dubbo"
 )
 
 // MetadataServiceExporter is the ConfigurableMetadataServiceExporter which implement MetadataServiceExporter interface
@@ -46,29 +53,31 @@ func NewMetadataServiceExporter(metadataService service.MetadataService) exporte
 }
 
 // Export will export the metadataService
-func (exporter *MetadataServiceExporter) Export() error {
+func (exporter *MetadataServiceExporter) Export(url *common.URL) error {
 	if !exporter.IsExported() {
-
-		serviceConfig := config.NewServiceConfig(constant.SIMPLE_METADATA_SERVICE_NAME, context.Background())
-		serviceConfig.Protocol = constant.DEFAULT_PROTOCOL
-		serviceConfig.Protocols = map[string]*config.ProtocolConfig{
-			constant.DEFAULT_PROTOCOL: generateMetadataProtocol(),
+		if url == nil || url.SubURL == nil {
+			return errors.New("metadata server url is nil, pls check your configuration")
 		}
-		serviceConfig.InterfaceName = constant.METADATA_SERVICE_NAME
-		// identify this is a golang server
-		serviceConfig.Params = map[string]string{}
-		serviceConfig.Group = config.GetApplicationConfig().Name
-		// now the error will always be nil
-		serviceConfig.Version, _ = exporter.metadataService.Version()
-
-		var err error
-		func() {
-			exporter.lock.Lock()
-			defer exporter.lock.Unlock()
-			exporter.ServiceConfig = serviceConfig
-			exporter.ServiceConfig.Implement(exporter.metadataService)
-			err = exporter.ServiceConfig.Export()
-		}()
+		version, _ := exporter.metadataService.Version()
+		exporter.lock.Lock()
+		defer exporter.lock.Unlock()
+		exporter.ServiceConfig = config.NewServiceConfig(
+			config.WithServiceID(constant.SIMPLE_METADATA_SERVICE_NAME),
+			config.WithServiceProtocolKeys(constant.DEFAULT_PROTOCOL),
+			config.WithServiceProtocol(constant.DEFAULT_PROTOCOL, config.NewProtocolConfig(
+				config.WithProtocolName(constant.DEFAULT_PROTOCOL),
+				config.WithProtocolPort(strconv.Itoa(constant.DEFAULT_METADATAPORT)),
+			)),
+			config.WithServiceRegistry("N/A"),
+			config.WithServiceInterface(constant.METADATA_SERVICE_NAME),
+			config.WithServiceGroup(config.GetApplicationConfig().Name),
+			config.WithServiceVersion(version),
+			config.WithProxyFactoryKey(constant.DEFAULT_Key),
+			config.WithServiceInterface(constant.METADATA_SERVICE_NAME),
+			config.WithServiceMetadataType(constant.REMOTE_METADATA_STORAGE_TYPE),
+		)
+		exporter.ServiceConfig.Implement(exporter.metadataService)
+		err := exporter.ServiceConfig.Export()
 
 		logger.Infof("The MetadataService exports urls : %v ", exporter.ServiceConfig.GetExportedUrls())
 		return err
@@ -95,12 +104,4 @@ func (exporter *MetadataServiceExporter) IsExported() bool {
 	exporter.lock.RLock()
 	defer exporter.lock.RUnlock()
 	return exporter.ServiceConfig != nil && exporter.ServiceConfig.IsExport()
-}
-
-// generateMetadataProtocol will return a default ProtocolConfig
-func generateMetadataProtocol() *config.ProtocolConfig {
-	return &config.ProtocolConfig{
-		Name: constant.DEFAULT_PROTOCOL,
-		Port: "20000",
-	}
 }

@@ -20,51 +20,68 @@ package dubbo
 import (
 	"context"
 	"strconv"
+	"strings"
 	"sync"
-	"sync/atomic"
 	"time"
 )
 
 import (
 	"github.com/opentracing/opentracing-go"
-	perrors "github.com/pkg/errors"
 )
 
 import (
-	"github.com/apache/dubbo-go/common"
-	"github.com/apache/dubbo-go/common/constant"
-	"github.com/apache/dubbo-go/common/logger"
-	"github.com/apache/dubbo-go/protocol"
-	invocation_impl "github.com/apache/dubbo-go/protocol/invocation"
+	"dubbo.apache.org/dubbo-go/v3/common"
+	"dubbo.apache.org/dubbo-go/v3/common/constant"
+	"dubbo.apache.org/dubbo-go/v3/common/logger"
+	"dubbo.apache.org/dubbo-go/v3/config"
+	"dubbo.apache.org/dubbo-go/v3/protocol"
+	invocation_impl "dubbo.apache.org/dubbo-go/v3/protocol/invocation"
+	"dubbo.apache.org/dubbo-go/v3/remoting"
 )
 
-var (
-	// ErrNoReply
-	ErrNoReply = perrors.New("request need @response")
-	// ErrDestroyedInvoker
-	ErrDestroyedInvoker = perrors.New("request Destroyed invoker")
-)
-
-var (
-	attachmentKey = []string{constant.INTERFACE_KEY, constant.GROUP_KEY, constant.TOKEN_KEY, constant.TIMEOUT_KEY}
-)
-
-// DubboInvoker is dubbo client invoker.
-type DubboInvoker struct {
-	protocol.BaseInvoker
-	client   *Client
-	quitOnce sync.Once
-	// Used to record the number of requests. -1 represent this DubboInvoker is destroyed
-	reqNum int64
+var attachmentKey = []string{
+	constant.INTERFACE_KEY, constant.GROUP_KEY, constant.TOKEN_KEY, constant.TIMEOUT_KEY,
+	constant.VERSION_KEY,
 }
 
-// NewDubboInvoker create dubbo client invoker.
-func NewDubboInvoker(url common.URL, client *Client) *DubboInvoker {
-	return &DubboInvoker{
+// DubboInvoker is implement of protocol.Invoker. A dubboInvoker refers to one service and ip.
+type DubboInvoker struct {
+	protocol.BaseInvoker
+	// the exchange layer, it is focus on network communication.
+	clientGuard *sync.RWMutex
+	client      *remoting.ExchangeClient
+	quitOnce    sync.Once
+	// timeout for service(interface) level.
+	timeout time.Duration
+}
+
+// NewDubboInvoker constructor
+func NewDubboInvoker(url *common.URL, client *remoting.ExchangeClient) *DubboInvoker {
+	rt := config.GetConsumerConfig().RequestTimeout
+
+	timeout := url.GetParamDuration(constant.TIMEOUT_KEY, rt)
+	di := &DubboInvoker{
 		BaseInvoker: *protocol.NewBaseInvoker(url),
+		clientGuard: &sync.RWMutex{},
 		client:      client,
-		reqNum:      0,
+		timeout:     timeout,
 	}
+
+	return di
+}
+
+func (di *DubboInvoker) setClient(client *remoting.ExchangeClient) {
+	di.clientGuard.Lock()
+	defer di.clientGuard.Unlock()
+
+	di.client = client
+}
+
+func (di *DubboInvoker) getClient() *remoting.ExchangeClient {
+	di.clientGuard.RLock()
+	defer di.clientGuard.RUnlock()
+
+	return di.client
 }
 
 // Invoke call remoting.
@@ -73,19 +90,36 @@ func (di *DubboInvoker) Invoke(ctx context.Context, invocation protocol.Invocati
 		err    error
 		result protocol.RPCResult
 	)
-	if di.reqNum < 0 {
+	if !di.BaseInvoker.IsAvailable() {
 		// Generally, the case will not happen, because the invoker has been removed
 		// from the invoker list before destroy,so no new request will enter the destroyed invoker
 		logger.Warnf("this dubboInvoker is destroyed")
-		result.Err = ErrDestroyedInvoker
+		result.Err = protocol.ErrDestroyedInvoker
 		return &result
 	}
-	atomic.AddInt64(&(di.reqNum), 1)
-	defer atomic.AddInt64(&(di.reqNum), -1)
+
+	di.clientGuard.RLock()
+	defer di.clientGuard.RUnlock()
+
+	if di.client == nil {
+		result.Err = protocol.ErrClientClosed
+		logger.Debugf("result.Err: %v", result.Err)
+		return &result
+	}
+
+	if !di.BaseInvoker.IsAvailable() {
+		// Generally, the case will not happen, because the invoker has been removed
+		// from the invoker list before destroy,so no new request will enter the destroyed invoker
+		logger.Warnf("this dubboInvoker is destroying")
+		result.Err = protocol.ErrDestroyedInvoker
+		return &result
+	}
 
 	inv := invocation.(*invocation_impl.RPCInvocation)
+	// init param
+	inv.SetAttachments(constant.PATH_KEY, di.GetURL().GetParam(constant.INTERFACE_KEY, ""))
 	for _, k := range attachmentKey {
-		if v := di.GetUrl().GetParam(k, ""); len(v) > 0 {
+		if v := di.GetURL().GetParam(k, ""); len(v) > 0 {
 			inv.SetAttachments(k, v)
 		}
 	}
@@ -93,54 +127,83 @@ func (di *DubboInvoker) Invoke(ctx context.Context, invocation protocol.Invocati
 	// put the ctx into attachment
 	di.appendCtx(ctx, inv)
 
-	url := di.GetUrl()
+	url := di.GetURL()
+	// default hessian2 serialization, compatible
+	if url.GetParam(constant.SERIALIZATION_KEY, "") == "" {
+		url.SetParam(constant.SERIALIZATION_KEY, constant.HESSIAN2_SERIALIZATION)
+	}
 	// async
 	async, err := strconv.ParseBool(inv.AttachmentsByKey(constant.ASYNC_KEY, "false"))
 	if err != nil {
 		logger.Errorf("ParseBool - error: %v", err)
 		async = false
 	}
-	response := NewResponse(inv.Reply(), nil)
+	// response := NewResponse(inv.Reply(), nil)
+	rest := &protocol.RPCResult{}
+	timeout := di.getTimeout(inv)
 	if async {
 		if callBack, ok := inv.CallBack().(func(response common.CallbackResponse)); ok {
-			result.Err = di.client.AsyncCall(NewRequest(url.Location, url, inv.MethodName(), inv.Arguments(), inv.Attachments()), callBack, response)
+			result.Err = di.client.AsyncRequest(&invocation, url, timeout, callBack, rest)
 		} else {
-			result.Err = di.client.CallOneway(NewRequest(url.Location, url, inv.MethodName(), inv.Arguments(), inv.Attachments()))
+			result.Err = di.client.Send(&invocation, url, timeout)
 		}
 	} else {
 		if inv.Reply() == nil {
-			result.Err = ErrNoReply
+			result.Err = protocol.ErrNoReply
 		} else {
-			result.Err = di.client.Call(NewRequest(url.Location, url, inv.MethodName(), inv.Arguments(), inv.Attachments()), response)
+			result.Err = di.client.Request(&invocation, url, timeout, rest)
 		}
 	}
 	if result.Err == nil {
 		result.Rest = inv.Reply()
-		result.Attrs = response.atta
+		result.Attrs = rest.Attrs
 	}
 	logger.Debugf("result.Err: %v, result.Rest: %v", result.Err, result.Rest)
 
 	return &result
 }
 
+// get timeout including methodConfig
+func (di *DubboInvoker) getTimeout(invocation *invocation_impl.RPCInvocation) time.Duration {
+	methodName := invocation.MethodName()
+	if di.GetURL().GetParamBool(constant.GENERIC_KEY, false) {
+		methodName = invocation.Arguments()[0].(string)
+	}
+	timeout := di.GetURL().GetParam(strings.Join([]string{constant.METHOD_KEYS, methodName, constant.TIMEOUT_KEY}, "."), "")
+	if len(timeout) != 0 {
+		if t, err := time.ParseDuration(timeout); err == nil {
+			// config timeout into attachment
+			invocation.SetAttachments(constant.TIMEOUT_KEY, strconv.Itoa(int(t.Milliseconds())))
+			return t
+		}
+	}
+	// set timeout into invocation at method level
+	invocation.SetAttachments(constant.TIMEOUT_KEY, strconv.Itoa(int(di.timeout.Milliseconds())))
+	return di.timeout
+}
+
+func (di *DubboInvoker) IsAvailable() bool {
+	client := di.getClient()
+	if client != nil {
+		return client.IsAvailable()
+	}
+
+	return false
+}
+
 // Destroy destroy dubbo client invoker.
 func (di *DubboInvoker) Destroy() {
 	di.quitOnce.Do(func() {
-		for {
-			if di.reqNum == 0 {
-				di.reqNum = -1
-				logger.Infof("dubboInvoker is destroyed,url:{%s}", di.GetUrl().Key())
-				di.BaseInvoker.Destroy()
-				if di.client != nil {
-					di.client.Close()
-					di.client = nil
-				}
-				break
+		di.BaseInvoker.Destroy()
+		client := di.getClient()
+		if client != nil {
+			activeNumber := client.DecreaseActiveNumber()
+			di.setClient(nil)
+			if activeNumber == 0 {
+				exchangeClientMap.Delete(di.GetURL().Location)
+				client.Close()
 			}
-			logger.Warnf("DubboInvoker is to be destroyed, wait {%v} req end,url:{%s}", di.reqNum, di.GetUrl().Key())
-			time.Sleep(1 * time.Second)
 		}
-
 	})
 }
 
@@ -150,8 +213,7 @@ func (di *DubboInvoker) appendCtx(ctx context.Context, inv *invocation_impl.RPCI
 	// inject opentracing ctx
 	currentSpan := opentracing.SpanFromContext(ctx)
 	if currentSpan != nil {
-		carrier := opentracing.TextMapCarrier(inv.Attachments())
-		err := opentracing.GlobalTracer().Inject(currentSpan.Context(), opentracing.TextMap, carrier)
+		err := injectTraceCtx(currentSpan, inv)
 		if err != nil {
 			logger.Errorf("Could not inject the span context into attachments: %v", err)
 		}

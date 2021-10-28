@@ -24,10 +24,12 @@ import (
 import (
 	gxset "github.com/dubbogo/gost/container/set"
 )
+
 import (
-	"github.com/apache/dubbo-go/common/extension"
-	"github.com/apache/dubbo-go/config"
-	"github.com/apache/dubbo-go/metadata/mapping"
+	"dubbo.apache.org/dubbo-go/v3/common"
+	"dubbo.apache.org/dubbo-go/v3/common/extension"
+	"dubbo.apache.org/dubbo-go/v3/config"
+	"dubbo.apache.org/dubbo-go/v3/metadata/mapping"
 )
 
 func init() {
@@ -36,16 +38,18 @@ func init() {
 
 type InMemoryServiceNameMapping struct{}
 
-func (i *InMemoryServiceNameMapping) Map(serviceInterface string, group string, version string, protocol string) error {
+func (i *InMemoryServiceNameMapping) Map(url *common.URL) error {
 	return nil
 }
 
-func (i *InMemoryServiceNameMapping) Get(serviceInterface string, group string, version string, protocol string) (*gxset.HashSet, error) {
+func (i *InMemoryServiceNameMapping) Get(url *common.URL) (*gxset.HashSet, error) {
 	return gxset.NewSet(config.GetApplicationConfig().Name), nil
 }
 
-var serviceNameMappingInstance *InMemoryServiceNameMapping
-var serviceNameMappingOnce sync.Once
+var (
+	serviceNameMappingInstance *InMemoryServiceNameMapping
+	serviceNameMappingOnce     sync.Once
+)
 
 func GetNameMappingInstance() mapping.ServiceNameMapping {
 	serviceNameMappingOnce.Do(func() {

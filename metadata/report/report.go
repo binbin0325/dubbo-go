@@ -18,8 +18,12 @@
 package report
 
 import (
-	"github.com/apache/dubbo-go/common"
-	"github.com/apache/dubbo-go/metadata/identifier"
+	gxset "github.com/dubbogo/gost/container/set"
+)
+
+import (
+	"dubbo.apache.org/dubbo-go/v3/common"
+	"dubbo.apache.org/dubbo-go/v3/metadata/identifier"
 )
 
 // MetadataReport is an interface of
@@ -38,7 +42,7 @@ type MetadataReport interface {
 	// SaveServiceMetadata saves the metadata.
 	// Metadata includes the basic info of the server,
 	// service info, and other user custom info.
-	SaveServiceMetadata(*identifier.ServiceMetadataIdentifier, common.URL) error
+	SaveServiceMetadata(*identifier.ServiceMetadataIdentifier, *common.URL) error
 
 	// RemoveServiceMetadata removes the metadata.
 	RemoveServiceMetadata(*identifier.ServiceMetadataIdentifier) error
@@ -57,4 +61,16 @@ type MetadataReport interface {
 
 	// GetServiceDefinition gets the service definition.
 	GetServiceDefinition(*identifier.MetadataIdentifier) (string, error)
+
+	// GetAppMetadata get metadata info from report
+	GetAppMetadata(*identifier.SubscriberMetadataIdentifier) (*common.MetadataInfo, error)
+
+	// PublishAppMetadata publish metadata info to reportss
+	PublishAppMetadata(*identifier.SubscriberMetadataIdentifier, *common.MetadataInfo) error
+
+	// RegisterServiceAppMapping map the specified Dubbo service interface to current Dubbo app name
+	RegisterServiceAppMapping(string, string, string) error
+
+	// GetServiceAppMapping get the app names from the specified Dubbo service interface
+	GetServiceAppMapping(string, string) (*gxset.HashSet, error)
 }

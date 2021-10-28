@@ -18,22 +18,25 @@
 package zookeeper
 
 import (
+	"encoding/base64"
 	"strings"
 	"sync"
 )
 
 import (
 	gxset "github.com/dubbogo/gost/container/set"
+	gxzookeeper "github.com/dubbogo/gost/database/kv/zk"
+
 	perrors "github.com/pkg/errors"
 )
 
 import (
-	"github.com/apache/dubbo-go/common"
-	"github.com/apache/dubbo-go/common/constant"
-	"github.com/apache/dubbo-go/common/logger"
-	"github.com/apache/dubbo-go/config_center"
-	"github.com/apache/dubbo-go/config_center/parser"
-	"github.com/apache/dubbo-go/remoting/zookeeper"
+	"dubbo.apache.org/dubbo-go/v3/common"
+	"dubbo.apache.org/dubbo-go/v3/common/constant"
+	"dubbo.apache.org/dubbo-go/v3/common/logger"
+	"dubbo.apache.org/dubbo-go/v3/config_center"
+	"dubbo.apache.org/dubbo-go/v3/config_center/parser"
+	"dubbo.apache.org/dubbo-go/v3/remoting/zookeeper"
 )
 
 const (
@@ -44,14 +47,15 @@ const (
 )
 
 type zookeeperDynamicConfiguration struct {
+	config_center.BaseDynamicConfiguration
 	url      *common.URL
 	rootPath string
 	wg       sync.WaitGroup
 	cltLock  sync.Mutex
 	done     chan struct{}
-	client   *zookeeper.ZookeeperClient
+	client   *gxzookeeper.ZookeeperClient
 
-	listenerLock  sync.Mutex
+	// listenerLock  sync.Mutex
 	listener      *zookeeper.ZkEventListener
 	cacheListener *CacheListener
 	parser        parser.ConfigurationParser
@@ -62,7 +66,7 @@ func newZookeeperDynamicConfiguration(url *common.URL) (*zookeeperDynamicConfigu
 		url:      url,
 		rootPath: "/" + url.GetParam(constant.CONFIG_NAMESPACE_KEY, config_center.DEFAULT_GROUP) + "/config",
 	}
-	err := zookeeper.ValidateZookeeperClient(c, zookeeper.WithZkName(ZkClient))
+	err := zookeeper.ValidateZookeeperClient(c, url.Location)
 	if err != nil {
 		logger.Errorf("zookeeper client start error ,error message is %v", err)
 		return nil, err
@@ -76,7 +80,6 @@ func newZookeeperDynamicConfiguration(url *common.URL) (*zookeeperDynamicConfigu
 	err = c.client.Create(c.rootPath)
 	c.listener.ListenServiceEvent(url, c.rootPath, c.cacheListener)
 	return c, err
-
 }
 
 func (c *zookeeperDynamicConfiguration) AddListener(key string, listener config_center.ConfigurationListener, opions ...config_center.Option) {
@@ -88,7 +91,6 @@ func (c *zookeeperDynamicConfiguration) RemoveListener(key string, listener conf
 }
 
 func (c *zookeeperDynamicConfiguration) GetProperties(key string, opts ...config_center.Option) (string, error) {
-
 	tmpOpts := &config_center.Options{}
 	for _, opt := range opts {
 		opt(tmpOpts)
@@ -113,8 +115,11 @@ func (c *zookeeperDynamicConfiguration) GetProperties(key string, opts ...config
 	if err != nil {
 		return "", perrors.WithStack(err)
 	}
-
-	return string(content), nil
+	decoded, err := base64.StdEncoding.DecodeString(string(content))
+	if err != nil {
+		return "", perrors.WithStack(err)
+	}
+	return string(decoded), nil
 }
 
 // GetInternalProperty For zookeeper, getConfig and getConfigs have the same meaning.
@@ -125,7 +130,9 @@ func (c *zookeeperDynamicConfiguration) GetInternalProperty(key string, opts ...
 // PublishConfig will put the value into Zk with specific path
 func (c *zookeeperDynamicConfiguration) PublishConfig(key string, group string, value string) error {
 	path := c.getPath(key, group)
-	err := c.client.CreateWithValue(path, []byte(value))
+	strbytes := []byte(value)
+	encoded := base64.StdEncoding.EncodeToString(strbytes)
+	err := c.client.CreateWithValue(path, []byte(encoded))
 	if err != nil {
 		return perrors.WithStack(err)
 	}
@@ -162,11 +169,11 @@ func (c *zookeeperDynamicConfiguration) SetParser(p parser.ConfigurationParser) 
 	c.parser = p
 }
 
-func (c *zookeeperDynamicConfiguration) ZkClient() *zookeeper.ZookeeperClient {
+func (c *zookeeperDynamicConfiguration) ZkClient() *gxzookeeper.ZookeeperClient {
 	return c.client
 }
 
-func (c *zookeeperDynamicConfiguration) SetZkClient(client *zookeeper.ZookeeperClient) {
+func (c *zookeeperDynamicConfiguration) SetZkClient(client *gxzookeeper.ZookeeperClient) {
 	c.client = client
 }
 
@@ -182,8 +189,8 @@ func (c *zookeeperDynamicConfiguration) Done() chan struct{} {
 	return c.done
 }
 
-func (c *zookeeperDynamicConfiguration) GetUrl() common.URL {
-	return *c.url
+func (c *zookeeperDynamicConfiguration) GetURL() *common.URL {
+	return c.url
 }
 
 func (c *zookeeperDynamicConfiguration) Destroy() {
@@ -205,10 +212,9 @@ func (c *zookeeperDynamicConfiguration) IsAvailable() bool {
 }
 
 func (c *zookeeperDynamicConfiguration) closeConfigs() {
+	logger.Infof("begin to close provider zk client")
 	c.cltLock.Lock()
 	defer c.cltLock.Unlock()
-	logger.Infof("begin to close provider zk client")
-	// Close the old client first to close the tmp node
 	c.client.Close()
 	c.client = nil
 }

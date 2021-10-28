@@ -26,8 +26,8 @@ import (
 )
 
 import (
-	"github.com/apache/dubbo-go/common"
-	"github.com/apache/dubbo-go/config_center/parser"
+	"dubbo.apache.org/dubbo-go/v3/common"
+	"dubbo.apache.org/dubbo-go/v3/config_center/parser"
 )
 
 // ////////////////////////////////////////
@@ -56,7 +56,12 @@ type DynamicConfiguration interface {
 	GetInternalProperty(string, ...Option) (string, error)
 
 	// PublishConfig will publish the config with the (key, group, value) pair
+	// for zk: path is /$(group)/config/$(key) -> value
+	// for nacos: group, key -> value
 	PublishConfig(string, string, string) error
+
+	// RemoveConfig will remove the config white the (key, group) pair
+	RemoveConfig(string, string) error
 
 	// GetConfigKeysByGroup will return all keys with the group
 	GetConfigKeysByGroup(group string) (*gxset.HashSet, error)
@@ -86,6 +91,6 @@ func WithTimeout(time time.Duration) Option {
 }
 
 // GetRuleKey The format is '{interfaceName}:[version]:[group]'
-func GetRuleKey(url common.URL) string {
+func GetRuleKey(url *common.URL) string {
 	return url.ColonSeparatedKey()
 }

@@ -17,14 +17,16 @@
 
 package config
 
-var (
-	defaultHistogramBucket = []float64{10, 50, 100, 200, 500, 1000, 10000}
-)
+var defaultHistogramBucket = []float64{10, 50, 100, 200, 500, 1000, 10000}
 
 // This is the config struct for all metrics implementation
 type MetricConfig struct {
 	Reporters       []string  `yaml:"reporters" json:"reporters,omitempty"`
 	HistogramBucket []float64 `yaml:"histogram_bucket" json:"histogram_bucket,omitempty"`
+}
+
+func initMetricConfig(rc *RootConfig) error {
+	return nil
 }
 
 // find the histogram bucket

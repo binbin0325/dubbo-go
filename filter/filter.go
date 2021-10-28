@@ -20,8 +20,9 @@ package filter
 import (
 	"context"
 )
+
 import (
-	"github.com/apache/dubbo-go/protocol"
+	"dubbo.apache.org/dubbo-go/v3/protocol"
 )
 
 // Filter interface defines the functions of a filter

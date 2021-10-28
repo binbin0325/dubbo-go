@@ -18,12 +18,12 @@
 package exporter
 
 import (
-	"github.com/apache/dubbo-go/common"
+	"dubbo.apache.org/dubbo-go/v3/common"
 )
 
 // MetadataServiceExporter will export & unexport the metadata service,  get exported url, and return is exported or not
 type MetadataServiceExporter interface {
-	Export() error
+	Export(url *common.URL) error
 	Unexport()
 	GetExportedURLs() []*common.URL
 	IsExported() bool

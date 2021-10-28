@@ -18,12 +18,11 @@
 package extension
 
 import (
-	"github.com/apache/dubbo-go/config_center"
+	"dubbo.apache.org/dubbo-go/v3/common/logger"
+	"dubbo.apache.org/dubbo-go/v3/config_center"
 )
 
-var (
-	configCenterFactories = make(map[string]func() config_center.DynamicConfigurationFactory)
-)
+var configCenterFactories = make(map[string]func() config_center.DynamicConfigurationFactory)
 
 // SetConfigCenterFactory sets the DynamicConfigurationFactory with @name
 func SetConfigCenterFactory(name string, v func() config_center.DynamicConfigurationFactory) {
@@ -33,7 +32,8 @@ func SetConfigCenterFactory(name string, v func() config_center.DynamicConfigura
 // GetConfigCenterFactory finds the DynamicConfigurationFactory with @name
 func GetConfigCenterFactory(name string) config_center.DynamicConfigurationFactory {
 	if configCenterFactories[name] == nil {
-		panic("config center for " + name + " is not existing, make sure you have import the package.")
+		logger.Warn("config center for " + name + " is not existing, make sure you have import the package.")
+		return nil
 	}
 	return configCenterFactories[name]()
 }

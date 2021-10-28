@@ -22,6 +22,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"io/ioutil"
 	"os"
 	"strconv"
 	"strings"
@@ -31,30 +32,38 @@ import (
 
 import (
 	perrors "github.com/pkg/errors"
+
 	v1 "k8s.io/api/core/v1"
+
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/selection"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/strategicpatch"
 	"k8s.io/apimachinery/pkg/watch"
+
 	"k8s.io/client-go/informers"
 	informerscorev1 "k8s.io/client-go/informers/core/v1"
+
 	"k8s.io/client-go/kubernetes"
+
 	"k8s.io/client-go/rest"
+
 	"k8s.io/client-go/tools/cache"
+
 	"k8s.io/client-go/util/workqueue"
 )
 
 import (
-	"github.com/apache/dubbo-go/common"
-	"github.com/apache/dubbo-go/common/logger"
+	"dubbo.apache.org/dubbo-go/v3/common"
+	"dubbo.apache.org/dubbo-go/v3/common/logger"
 )
 
 const (
 	// kubernetes inject env var
 	podNameKey              = "HOSTNAME"
 	nameSpaceKey            = "NAMESPACE"
+	nameSpaceFilePath       = "/var/run/secrets/kubernetes.io/serviceaccount/namespace"
 	needWatchedNameSpaceKey = "DUBBO_NAMESPACE"
 
 	// all pod annotation key
@@ -68,9 +77,7 @@ const (
 	defaultResync = 5 * time.Minute
 )
 
-var (
-	ErrDubboLabelAlreadyExist = perrors.New("dubbo label already exist")
-)
+var ErrDubboLabelAlreadyExist = perrors.New("dubbo label already exist")
 
 // dubboRegistryController works like a kubernetes controller
 type dubboRegistryController struct {
@@ -96,7 +103,7 @@ type dubboRegistryController struct {
 	listAndWatchStartResourceVersion uint64
 	namespacedInformerFactory        map[string]informers.SharedInformerFactory
 	namespacedPodInformers           map[string]informerscorev1.PodInformer
-	queue                            workqueue.Interface //shared by namespaced informers
+	queue                            workqueue.Interface // shared by namespaced informers
 }
 
 func newDubboRegistryController(
@@ -146,7 +153,6 @@ func newDubboRegistryController(
 // GetInClusterKubernetesClient
 // current pod running in kubernetes-cluster
 func GetInClusterKubernetesClient() (kubernetes.Interface, error) {
-
 	// read in-cluster config
 	cfg, err := rest.InClusterConfig()
 	if err != nil {
@@ -161,7 +167,6 @@ func GetInClusterKubernetesClient() (kubernetes.Interface, error) {
 // 2. put every element to watcherSet
 // 3. refresh watch book-mark
 func (c *dubboRegistryController) initWatchSet() error {
-
 	req, err := labels.NewRequirement(DubboIOLabelKey, selection.In, []string{DubboIOConsumerLabelValue, DubboIOProviderLabelValue})
 	if err != nil {
 		return perrors.WithMessage(err, "new requirement")
@@ -193,21 +198,26 @@ func (c *dubboRegistryController) initWatchSet() error {
 // 1. current pod name
 // 2. current pod working namespace
 func (c *dubboRegistryController) readConfig() error {
-
 	// read current pod name && namespace
 	c.name = os.Getenv(podNameKey)
 	if len(c.name) == 0 {
-		return perrors.New("read value from env by key (HOSTNAME)")
+		return perrors.Errorf("read pod name from env %s failed", podNameKey)
+	}
+	namespace, err := ioutil.ReadFile(nameSpaceFilePath)
+	if err == nil && len(namespace) != 0 {
+		c.namespace = string(namespace)
+		return nil
 	}
 	c.namespace = os.Getenv(nameSpaceKey)
-	if len(c.namespace) == 0 {
-		return perrors.New("read value from env by key (NAMESPACE)")
+	if len(c.namespace) != 0 {
+		return nil
 	}
-	return nil
+	return perrors.Errorf("get empty namesapce, please check if namespace file at %s exist, or environment %s"+
+		" is set", nameSpaceFilePath, nameSpaceKey)
+
 }
 
 func (c *dubboRegistryController) initNamespacedPodInformer(ns string) error {
-
 	req, err := labels.NewRequirement(DubboIOLabelKey, selection.In, []string{DubboIOConsumerLabelValue, DubboIOProviderLabelValue})
 	if err != nil {
 		return perrors.WithMessage(err, "new requirement")
@@ -237,7 +247,6 @@ func (c *dubboRegistryController) initNamespacedPodInformer(ns string) error {
 }
 
 func (c *dubboRegistryController) initPodInformer() error {
-
 	if c.role == common.PROVIDER {
 		return nil
 	}
@@ -323,7 +332,6 @@ func (c *dubboRegistryController) startALLInformers() {
 // run
 // controller process every event in work-queue
 func (c *dubboRegistryController) run() {
-
 	if c.role == common.PROVIDER {
 		return
 	}
@@ -402,7 +410,6 @@ func (c *dubboRegistryController) handleWatchedPodEvent(p *v1.Pod, eventType wat
 
 // unmarshalRecord unmarshals the kubernetes dubbo annotation value
 func (c *dubboRegistryController) unmarshalRecord(record string) ([]*WatcherEvent, error) {
-
 	if len(record) == 0 {
 		// []*WatcherEvent is nil.
 		return nil, nil
@@ -442,7 +449,7 @@ func (c *dubboRegistryController) initCurrentPod() error {
 		return perrors.WithMessage(err, "get patch")
 	}
 
-	currentPod, err = c.patchCurrentPod(p)
+	_, err = c.patchCurrentPod(p)
 	if err != nil {
 		return perrors.WithMessage(err, "patch to current pod")
 	}
@@ -457,6 +464,36 @@ func (c *dubboRegistryController) patchCurrentPod(patch []byte) (*v1.Pod, error)
 		return nil, perrors.WithMessage(err, "patch in kubernetes pod ")
 	}
 	return updatedPod, nil
+}
+
+func (c *dubboRegistryController) assembleLabel(k, v string) error {
+	var (
+		oldPod = &v1.Pod{}
+		newPod = &v1.Pod{}
+	)
+	oldPod.Labels = make(map[string]string, 8)
+	newPod.Labels = make(map[string]string, 8)
+	currentPod, err := c.readCurrentPod()
+	if err != nil {
+		return err
+	}
+	// copy current pod labels to oldPod && newPod
+	for k, v := range currentPod.GetLabels() {
+		oldPod.Labels[k] = v
+		newPod.Labels[k] = v
+	}
+	newPod.Labels[k] = v
+
+	p, err := c.getPatch(oldPod, newPod)
+	if err != nil {
+		return perrors.WithMessage(err, "get patch")
+	}
+
+	_, err = c.patchCurrentPod(p)
+	if err != nil {
+		return perrors.WithMessage(err, "patch to current pod")
+	}
+	return nil
 }
 
 // assembleDUBBOLabel assembles the dubbo kubernetes label
@@ -497,7 +534,6 @@ func (c *dubboRegistryController) assembleDUBBOLabel(p *v1.Pod) (*v1.Pod, *v1.Po
 // assembleDUBBOAnnotations assembles the dubbo kubernetes annotations
 // accord the current pod && (k,v) assemble the old-pod, new-pod
 func (c *dubboRegistryController) assembleDUBBOAnnotations(k, v string, currentPod *v1.Pod) (oldPod *v1.Pod, newPod *v1.Pod, err error) {
-
 	oldPod = &v1.Pod{}
 	newPod = &v1.Pod{}
 	oldPod.Annotations = make(map[string]string, 8)
@@ -563,7 +599,6 @@ func (c *dubboRegistryController) readCurrentPod() (*v1.Pod, error) {
 
 // addAnnotationForCurrentPod adds annotation for current pod
 func (c *dubboRegistryController) addAnnotationForCurrentPod(k string, v string) error {
-
 	c.lock.Lock()
 	defer c.lock.Unlock()
 

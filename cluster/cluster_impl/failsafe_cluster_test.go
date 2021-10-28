@@ -25,25 +25,25 @@ import (
 
 import (
 	"github.com/golang/mock/gomock"
+
 	perrors "github.com/pkg/errors"
+
 	"github.com/stretchr/testify/assert"
 )
 
 import (
-	"github.com/apache/dubbo-go/cluster/directory"
-	"github.com/apache/dubbo-go/cluster/loadbalance"
-	"github.com/apache/dubbo-go/common"
-	"github.com/apache/dubbo-go/common/constant"
-	"github.com/apache/dubbo-go/common/extension"
-	"github.com/apache/dubbo-go/protocol"
-	"github.com/apache/dubbo-go/protocol/invocation"
-	"github.com/apache/dubbo-go/protocol/mock"
+	"dubbo.apache.org/dubbo-go/v3/cluster/directory"
+	"dubbo.apache.org/dubbo-go/v3/cluster/loadbalance"
+	"dubbo.apache.org/dubbo-go/v3/common"
+	"dubbo.apache.org/dubbo-go/v3/common/constant"
+	"dubbo.apache.org/dubbo-go/v3/common/extension"
+	"dubbo.apache.org/dubbo-go/v3/protocol"
+	"dubbo.apache.org/dubbo-go/v3/protocol/invocation"
+	"dubbo.apache.org/dubbo-go/v3/protocol/mock"
 )
 
-var (
-	failsafeUrl, _ = common.NewURL(
-		fmt.Sprintf("dubbo://%s:%d/com.ikurento.user.UserProvider", constant.LOCAL_HOST_VALUE, constant.DEFAULT_PORT))
-)
+var failsafeUrl, _ = common.NewURL(
+	fmt.Sprintf("dubbo://%s:%d/com.ikurento.user.UserProvider", constant.LOCAL_HOST_VALUE, constant.DEFAULT_PORT))
 
 // registerFailsafe register failsafeCluster to cluster extension.
 func registerFailsafe(invoker *mock.MockInvoker) protocol.Invoker {
@@ -52,6 +52,7 @@ func registerFailsafe(invoker *mock.MockInvoker) protocol.Invoker {
 
 	invokers := []protocol.Invoker{}
 	invokers = append(invokers, invoker)
+	invoker.EXPECT().IsAvailable().Return(true).AnyTimes()
 
 	invoker.EXPECT().GetUrl().Return(failbackUrl)
 
@@ -66,6 +67,8 @@ func TestFailSafeInvokeSuccess(t *testing.T) {
 
 	invoker := mock.NewMockInvoker(ctrl)
 	clusterInvoker := registerFailsafe(invoker)
+
+	invoker.EXPECT().IsAvailable().Return(true).AnyTimes()
 
 	invoker.EXPECT().GetUrl().Return(failsafeUrl).AnyTimes()
 
@@ -85,6 +88,7 @@ func TestFailSafeInvokeFail(t *testing.T) {
 
 	invoker := mock.NewMockInvoker(ctrl)
 	clusterInvoker := registerFailsafe(invoker)
+	invoker.EXPECT().IsAvailable().Return(true).AnyTimes()
 
 	invoker.EXPECT().GetUrl().Return(failsafeUrl).AnyTimes()
 

@@ -19,12 +19,8 @@ package constant
 
 // nolint
 const (
-	// CONF_CONSUMER_FILE_PATH ...
-	CONF_CONSUMER_FILE_PATH = "CONF_CONSUMER_FILE_PATH"
-	// CONF_PROVIDER_FILE_PATH ...
-	CONF_PROVIDER_FILE_PATH = "CONF_PROVIDER_FILE_PATH"
+	// CONFIG_FILE_ENV_KEY is key of environment variable dubbogo configure file path
+	CONFIG_FILE_ENV_KEY = "DUBBO_GO_CONFIG_PATH"
 	// APP_LOG_CONF_FILE ...
 	APP_LOG_CONF_FILE = "APP_LOG_CONF_FILE"
-	// CONF_ROUTER_FILE_PATH Specify Path variable of router config file
-	CONF_ROUTER_FILE_PATH = "CONF_ROUTER_FILE_PATH"
 )

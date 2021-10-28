@@ -18,9 +18,9 @@
 package cluster_impl
 
 import (
-	"github.com/apache/dubbo-go/cluster"
-	"github.com/apache/dubbo-go/common/extension"
-	"github.com/apache/dubbo-go/protocol"
+	"dubbo.apache.org/dubbo-go/v3/cluster"
+	"dubbo.apache.org/dubbo-go/v3/common/extension"
+	"dubbo.apache.org/dubbo-go/v3/protocol"
 )
 
 type availableCluster struct{}
@@ -39,6 +39,6 @@ func NewAvailableCluster() cluster.Cluster {
 }
 
 // Join returns a baseClusterInvoker instance
-func (cluser *availableCluster) Join(directory cluster.Directory) protocol.Invoker {
-	return NewAvailableClusterInvoker(directory)
+func (cluster *availableCluster) Join(directory cluster.Directory) protocol.Invoker {
+	return buildInterceptorChain(NewAvailableClusterInvoker(directory))
 }

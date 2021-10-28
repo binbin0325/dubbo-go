@@ -18,21 +18,27 @@
 package chain
 
 import (
-	"math"
 	"sort"
 	"sync"
 )
 
 import (
 	perrors "github.com/pkg/errors"
+
+	"go.uber.org/atomic"
 )
 
 import (
-	"github.com/apache/dubbo-go/cluster/router"
-	"github.com/apache/dubbo-go/common"
-	"github.com/apache/dubbo-go/common/extension"
-	"github.com/apache/dubbo-go/common/logger"
-	"github.com/apache/dubbo-go/protocol"
+	"dubbo.apache.org/dubbo-go/v3/cluster/router"
+	"dubbo.apache.org/dubbo-go/v3/common"
+	"dubbo.apache.org/dubbo-go/v3/common/extension"
+	"dubbo.apache.org/dubbo-go/v3/common/logger"
+	"dubbo.apache.org/dubbo-go/v3/protocol"
+)
+
+var (
+	virtualServiceConfigByte  []byte
+	destinationRuleConfigByte []byte
 )
 
 // RouterChain Router chain
@@ -46,32 +52,15 @@ type RouterChain struct {
 	builtinRouters []router.PriorityRouter
 
 	mutex sync.RWMutex
-
-	url common.URL
 }
 
 // Route Loop routers in RouterChain and call Route method to determine the target invokers list.
-func (c *RouterChain) Route(invokers []protocol.Invoker, url *common.URL, invocation protocol.Invocation) []protocol.Invoker {
-	finalInvokers := invokers
-	l := len(c.routers)
-	rs := make([]router.PriorityRouter, l, int(math.Ceil(float64(l)*1.2)))
-	c.mutex.RLock()
-	copy(rs, c.routers)
-	c.mutex.RUnlock()
-
-	for _, r := range rs {
-		finalInvokers = r.Route(finalInvokers, url, invocation)
+func (c *RouterChain) Route(url *common.URL, invocation protocol.Invocation) []protocol.Invoker {
+	finalInvokers := c.invokers
+	for _, r := range c.copyRouters() {
+		finalInvokers = r.Route(c.invokers, url, invocation)
 	}
 	return finalInvokers
-}
-
-// SetInvokers notify router chain of the initial addresses from registry at the first time. Notify whenever addresses in registry change.
-func (c *RouterChain) SetInvokers(invokers []protocol.Invoker) {
-	for _, r := range c.routers {
-		if notifyRouter, ok := r.(router.NotifyRouter); ok {
-			notifyRouter.Notify(invokers)
-		}
-	}
 }
 
 // AddRouters Add routers to router chain
@@ -88,9 +77,38 @@ func (c *RouterChain) AddRouters(routers []router.PriorityRouter) {
 	c.routers = newRouters
 }
 
-// URL Return URL in RouterChain
-func (c *RouterChain) URL() common.URL {
-	return c.url
+// SetInvokers receives updated invokers from registry center. If the times of notification exceeds countThreshold and
+// time interval exceeds timeThreshold since last cache update, then notify to update the cache.
+func (c *RouterChain) SetInvokers(invokers []protocol.Invoker) {
+	c.mutex.Lock()
+	c.invokers = invokers
+	c.mutex.Unlock()
+}
+
+// copyRouters make a snapshot copy from RouterChain's router list.
+func (c *RouterChain) copyRouters() []router.PriorityRouter {
+	c.mutex.RLock()
+	defer c.mutex.RUnlock()
+	ret := make([]router.PriorityRouter, 0, len(c.routers))
+	ret = append(ret, c.routers...)
+	return ret
+}
+
+// copyInvokers copies a snapshot of the received invokers.
+func (c *RouterChain) copyInvokers() []protocol.Invoker {
+	c.mutex.RLock()
+	defer c.mutex.RUnlock()
+	if c.invokers == nil || len(c.invokers) == 0 {
+		return nil
+	}
+	ret := make([]protocol.Invoker, 0, len(c.invokers))
+	ret = append(ret, c.invokers...)
+	return ret
+}
+
+func SetVSAndDRConfigByte(vs, dr []byte) {
+	virtualServiceConfigByte = vs
+	destinationRuleConfigByte = dr
 }
 
 // NewRouterChain Use url to init router chain
@@ -100,11 +118,16 @@ func NewRouterChain(url *common.URL) (*RouterChain, error) {
 	if len(routerFactories) == 0 {
 		return nil, perrors.Errorf("No routerFactory exits , create one please")
 	}
+
 	routers := make([]router.PriorityRouter, 0, len(routerFactories))
+
 	for key, routerFactory := range routerFactories {
-		r, err := routerFactory().NewPriorityRouter(url)
+		if virtualServiceConfigByte == nil || destinationRuleConfigByte == nil {
+			logger.Warnf("virtual Service ProtocolConfig or destinationRule Confi Byte may be empty, pls check your CONF_VIRTUAL_SERVICE_FILE_PATH and CONF_DEST_RULE_FILE_PATH env is correctly point to your yaml file\n")
+		}
+		r, err := routerFactory().NewPriorityRouter(virtualServiceConfigByte, destinationRuleConfigByte)
 		if r == nil || err != nil {
-			logger.Errorf("router chain build router fail! routerFactories key:%s  error:%s", key, err.Error())
+			logger.Errorf("router chain build router fail! routerFactories key:%s  error:%vv", key, err)
 			continue
 		}
 		routers = append(routers, r)
@@ -115,12 +138,12 @@ func NewRouterChain(url *common.URL) (*RouterChain, error) {
 
 	sortRouter(newRouters)
 
+	routerNeedsUpdateInit := atomic.Bool{}
+	routerNeedsUpdateInit.Store(false)
+
 	chain := &RouterChain{
-		builtinRouters: routers,
 		routers:        newRouters,
-	}
-	if url != nil {
-		chain.url = *url
+		builtinRouters: routers,
 	}
 
 	return chain, nil

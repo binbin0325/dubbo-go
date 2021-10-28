@@ -18,12 +18,11 @@
 package extension
 
 import (
-	"github.com/apache/dubbo-go/common/proxy"
+	"dubbo.apache.org/dubbo-go/v3/common/logger"
+	"dubbo.apache.org/dubbo-go/v3/common/proxy"
 )
 
-var (
-	proxyFactories = make(map[string]func(...proxy.Option) proxy.ProxyFactory)
-)
+var proxyFactories = make(map[string]func(...proxy.Option) proxy.ProxyFactory)
 
 // SetProxyFactory sets the ProxyFactory extension with @name
 func SetProxyFactory(name string, f func(...proxy.Option) proxy.ProxyFactory) {
@@ -36,7 +35,8 @@ func GetProxyFactory(name string) proxy.ProxyFactory {
 		name = "default"
 	}
 	if proxyFactories[name] == nil {
-		panic("proxy factory for " + name + " is not existing, make sure you have import the package.")
+		logger.Warn("proxy factory for " + name + " is not existing, make sure you have import the package.")
+		return nil
 	}
 	return proxyFactories[name]()
 }

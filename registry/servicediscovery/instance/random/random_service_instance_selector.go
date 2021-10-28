@@ -23,25 +23,24 @@ import (
 )
 
 import (
-	"github.com/apache/dubbo-go/common"
-	"github.com/apache/dubbo-go/common/extension"
-	"github.com/apache/dubbo-go/registry"
-	"github.com/apache/dubbo-go/registry/servicediscovery/instance"
+	"dubbo.apache.org/dubbo-go/v3/common"
+	"dubbo.apache.org/dubbo-go/v3/common/extension"
+	"dubbo.apache.org/dubbo-go/v3/registry"
+	"dubbo.apache.org/dubbo-go/v3/registry/servicediscovery/instance"
 )
 
 func init() {
 	extension.SetServiceInstanceSelector("random", NewRandomServiceInstanceSelector)
 }
 
-//the ServiceInstanceSelector implementation based on Random algorithm
-type RandomServiceInstanceSelector struct {
-}
+// the ServiceInstanceSelector implementation based on Random algorithm
+type RandomServiceInstanceSelector struct{}
 
 func NewRandomServiceInstanceSelector() instance.ServiceInstanceSelector {
 	return &RandomServiceInstanceSelector{}
 }
 
-func (r *RandomServiceInstanceSelector) Select(url common.URL, serviceInstances []registry.ServiceInstance) registry.ServiceInstance {
+func (r *RandomServiceInstanceSelector) Select(url *common.URL, serviceInstances []registry.ServiceInstance) registry.ServiceInstance {
 	if len(serviceInstances) == 0 {
 		return nil
 	}
@@ -51,5 +50,4 @@ func (r *RandomServiceInstanceSelector) Select(url common.URL, serviceInstances 
 	rand.Seed(time.Now().UnixNano())
 	index := rand.Intn(len(serviceInstances))
 	return serviceInstances[index]
-
 }

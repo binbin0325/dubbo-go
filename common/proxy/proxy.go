@@ -25,37 +25,60 @@ import (
 
 import (
 	"github.com/apache/dubbo-go-hessian2/java_exception"
+
 	perrors "github.com/pkg/errors"
 )
 
 import (
-	"github.com/apache/dubbo-go/common"
-	"github.com/apache/dubbo-go/common/constant"
-	"github.com/apache/dubbo-go/common/logger"
-	"github.com/apache/dubbo-go/protocol"
-	invocation_impl "github.com/apache/dubbo-go/protocol/invocation"
+	"dubbo.apache.org/dubbo-go/v3/common"
+	"dubbo.apache.org/dubbo-go/v3/common/constant"
+	"dubbo.apache.org/dubbo-go/v3/common/logger"
+	"dubbo.apache.org/dubbo-go/v3/protocol"
+	invocation_impl "dubbo.apache.org/dubbo-go/v3/protocol/invocation"
 )
 
 // nolint
 type Proxy struct {
 	rpc         common.RPCService
 	invoke      protocol.Invoker
-	callBack    interface{}
+	callback    interface{}
 	attachments map[string]string
-
-	once sync.Once
+	implement   ImplementFunc
+	once        sync.Once
 }
 
-var (
-	typError = reflect.Zero(reflect.TypeOf((*error)(nil)).Elem()).Type()
+type (
+	// ProxyOption a function to init Proxy with options
+	ProxyOption func(p *Proxy)
+	// ImplementFunc function for proxy impl of RPCService functions
+	ImplementFunc func(p *Proxy, v common.RPCService)
 )
 
+var typError = reflect.Zero(reflect.TypeOf((*error)(nil)).Elem()).Type()
+
 // NewProxy create service proxy.
-func NewProxy(invoke protocol.Invoker, callBack interface{}, attachments map[string]string) *Proxy {
-	return &Proxy{
+func NewProxy(invoke protocol.Invoker, callback interface{}, attachments map[string]string) *Proxy {
+	return NewProxyWithOptions(invoke, callback, attachments,
+		WithProxyImplementFunc(DefaultProxyImplementFunc))
+}
+
+// NewProxyWithOptions create service proxy with options.
+func NewProxyWithOptions(invoke protocol.Invoker, callback interface{}, attachments map[string]string, opts ...ProxyOption) *Proxy {
+	p := &Proxy{
 		invoke:      invoke,
-		callBack:    callBack,
+		callback:    callback,
 		attachments: attachments,
+	}
+	for _, opt := range opts {
+		opt(p)
+	}
+	return p
+}
+
+// WithProxyImplementFunc an option function to setup proxy.ImplementFunc
+func WithProxyImplementFunc(f ImplementFunc) ProxyOption {
+	return func(p *Proxy) {
+		p.implement = f
 	}
 }
 
@@ -66,46 +89,69 @@ func NewProxy(invoke protocol.Invoker, callBack interface{}, attachments map[str
 //  		Yyy func(ctx context.Context, args []interface{}, rsp *Zzz) error
 // 		}
 func (p *Proxy) Implement(v common.RPCService) {
+	p.once.Do(func() {
+		p.implement(p, v)
+		p.rpc = v
+	})
+}
 
+// Get gets rpc service instance.
+func (p *Proxy) Get() common.RPCService {
+	return p.rpc
+}
+
+// GetCallback gets callback.
+func (p *Proxy) GetCallback() interface{} {
+	return p.callback
+}
+
+// GetInvoker gets Invoker.
+func (p *Proxy) GetInvoker() protocol.Invoker {
+	return p.invoke
+}
+
+// DefaultProxyImplementFunc the default function for proxy impl
+func DefaultProxyImplementFunc(p *Proxy, v common.RPCService) {
 	// check parameters, incoming interface must be a elem's pointer.
 	valueOf := reflect.ValueOf(v)
-	logger.Debugf("[Implement] reflect.TypeOf: %s", valueOf.String())
 
 	valueOfElem := valueOf.Elem()
 	typeOf := valueOfElem.Type()
 
 	// check incoming interface, incoming interface's elem must be a struct.
 	if typeOf.Kind() != reflect.Struct {
-		logger.Errorf("%s must be a struct ptr", valueOf.String())
+		logger.Errorf("The type of RPCService(=\"%T\") must be a pointer of a struct.", v)
 		return
 	}
 
 	makeDubboCallProxy := func(methodName string, outs []reflect.Type) func(in []reflect.Value) []reflect.Value {
 		return func(in []reflect.Value) []reflect.Value {
 			var (
-				err    error
-				inv    *invocation_impl.RPCInvocation
-				inIArr []interface{}
-				inVArr []reflect.Value
-				reply  reflect.Value
+				err            error
+				inv            *invocation_impl.RPCInvocation
+				inIArr         []interface{}
+				inVArr         []reflect.Value
+				reply          reflect.Value
+				replyEmptyFlag bool
 			)
 			if methodName == "Echo" {
 				methodName = "$echo"
 			}
 
-			if len(outs) == 2 {
+			if len(outs) == 2 { // return (reply, error)
 				if outs[0].Kind() == reflect.Ptr {
 					reply = reflect.New(outs[0].Elem())
 				} else {
 					reply = reflect.New(outs[0])
 				}
-			} else {
-				reply = valueOf
+			} else { // only return error
+				replyEmptyFlag = true
 			}
 
 			start := 0
 			end := len(in)
 			invCtx := context.Background()
+			// retrieve the context from the first argument if existed
 			if end > 0 {
 				if in[0].Type().String() == "context.Context" {
 					if !in[0].IsNil() {
@@ -113,10 +159,6 @@ func (p *Proxy) Implement(v common.RPCService) {
 						invCtx = in[0].Interface().(context.Context)
 					}
 					start += 1
-				}
-				if len(outs) == 1 && in[end-1].Type().Kind() == reflect.Ptr {
-					end -= 1
-					reply = in[len(in)-1]
 				}
 			}
 
@@ -138,31 +180,35 @@ func (p *Proxy) Implement(v common.RPCService) {
 			}
 
 			inv = invocation_impl.NewRPCInvocationWithOptions(invocation_impl.WithMethodName(methodName),
-				invocation_impl.WithArguments(inIArr), invocation_impl.WithReply(reply.Interface()),
-				invocation_impl.WithCallBack(p.callBack), invocation_impl.WithParameterValues(inVArr))
+				invocation_impl.WithArguments(inIArr),
+				invocation_impl.WithCallBack(p.callback), invocation_impl.WithParameterValues(inVArr))
+			if !replyEmptyFlag {
+				inv.SetReply(reply.Interface())
+			}
 
 			for k, value := range p.attachments {
 				inv.SetAttachments(k, value)
 			}
 
-			// add user setAttachment
+			// add user setAttachment. It is compatibility with previous versions.
 			atm := invCtx.Value(constant.AttachmentKey)
 			if m, ok := atm.(map[string]string); ok {
 				for k, value := range m {
 					inv.SetAttachments(k, value)
 				}
+			} else if m2, ok2 := atm.(map[string]interface{}); ok2 {
+				// it is support to transfer map[string]interface{}. It refers to dubbo-java 2.7.
+				for k, value := range m2 {
+					inv.SetAttachments(k, value)
+				}
 			}
 
 			result := p.invoke.Invoke(invCtx, inv)
-			if len(result.Attachments()) > 0 {
-				invCtx = context.WithValue(invCtx, constant.AttachmentKey, result.Attachments())
-			}
-
 			err = result.Error()
 			if err != nil {
 				// the cause reason
 				err = perrors.Cause(err)
-				// if some error happened, it should be log some info in the seperate file.
+				// if some error happened, it should be log some info in the separate file.
 				if throwabler, ok := err.(java_exception.Throwabler); ok {
 					logger.Warnf("invoke service throw exception: %v , stackTraceElements: %v", err.Error(), throwabler.GetStackTrace())
 				} else {
@@ -204,7 +250,7 @@ func (p *Proxy) Implement(v common.RPCService) {
 				continue
 			}
 
-			var funcOuts = make([]reflect.Type, outNum)
+			funcOuts := make([]reflect.Type, outNum)
 			for i := 0; i < outNum; i++ {
 				funcOuts[i] = t.Type.Out(i)
 			}
@@ -214,19 +260,4 @@ func (p *Proxy) Implement(v common.RPCService) {
 			logger.Debugf("set method [%s]", methodName)
 		}
 	}
-
-	p.once.Do(func() {
-		p.rpc = v
-	})
-
-}
-
-// Get gets rpc service instance.
-func (p *Proxy) Get() common.RPCService {
-	return p.rpc
-}
-
-// GetCallback gets callback.
-func (p *Proxy) GetCallback() interface{} {
-	return p.callBack
 }

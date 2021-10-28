@@ -18,63 +18,76 @@
 package config
 
 import (
-	gxset "github.com/dubbogo/gost/container/set"
-	perrors "github.com/pkg/errors"
+	"github.com/creasty/defaults"
 )
 
 import (
-	"github.com/apache/dubbo-go/cluster/router"
-	"github.com/apache/dubbo-go/common/extension"
-	"github.com/apache/dubbo-go/common/logger"
-	"github.com/apache/dubbo-go/common/yaml"
+	_ "dubbo.apache.org/dubbo-go/v3/cluster/router/chain"
+	"dubbo.apache.org/dubbo-go/v3/common/constant"
 )
 
-var (
-	routerURLSet = gxset.NewSet()
-)
-
-// LocalRouterRules defines the local router config structure
-type LocalRouterRules struct {
-	RouterRules []interface{} `yaml:"routerRules"`
+// RouterConfig is the configuration of the router.
+type RouterConfig struct {
+	// Scope must be chosen from `service` and `application`.
+	Scope string `validate:"required" yaml:"scope" json:"scope,omitempty" property:"scope"`
+	// Key specifies which service or application the rule body acts on.
+	Key        string   `validate:"required" yaml:"key" json:"key,omitempty" property:"key"`
+	Force      bool     `default:"false" yaml:"force" json:"force,omitempty" property:"force"`
+	Runtime    bool     `default:"false" yaml:"runtime" json:"runtime,omitempty" property:"runtime"`
+	Enable     bool     `default:"true" yaml:"enable" json:"enable,omitempty" property:"enable"`
+	Valid      bool     `default:"true" yaml:"valid" json:"valid,omitempty" property:"valid"`
+	Priority   int      `default:"0" yaml:"priority" json:"priority,omitempty" property:"priority"`
+	Conditions []string `yaml:"conditions" json:"conditions,omitempty" property:"conditions"`
+	Tags       []Tag    `yaml:"tags" json:"tags,omitempty" property:"tags"`
 }
 
-// RouterInit Load config file to init router config
-func RouterInit(confRouterFile string) error {
-	bytes, err := yaml.LoadYMLConfig(confRouterFile)
-	if err != nil {
-		return perrors.Errorf("ioutil.ReadFile(file:%s) = error:%v", confRouterFile, perrors.WithStack(err))
-	}
-	routerRules := &LocalRouterRules{}
-	err = yaml.UnmarshalYML(bytes, routerRules)
-	if err != nil {
-		return perrors.Errorf("Load router file %s failed due to error: %v", confRouterFile, perrors.WithStack(err))
-	}
-	if len(routerRules.RouterRules) == 0 {
-		return perrors.Errorf("No router configurations in file %s", confRouterFile)
-	}
-	fileRouterFactories := extension.GetFileRouterFactories()
-	for _, v := range routerRules.RouterRules {
-		content, _ := yaml.MarshalYML(v)
-		err = initRouterConfig(content, fileRouterFactories)
-	}
-	return err
+type Tag struct {
+	Name      string   `yaml:"name" json:"name,omitempty" property:"name"`
+	Addresses []string `yaml:"addresses" json:"addresses,omitempty" property:"addresses"`
 }
 
-func initRouterConfig(content []byte, factories map[string]router.FilePriorityRouterFactory) error {
-	logger.Warnf("get fileRouterFactories len{%+v})", len(factories))
-	for k, factory := range factories {
-		r, e := factory.NewFileRouter(content)
-		if e == nil {
-			url := r.URL()
-			routerURLSet.Add(&url)
-			return nil
+// Prefix dubbo.router
+func (RouterConfig) Prefix() string {
+	return constant.RouterConfigPrefix
+}
+
+func (c *RouterConfig) check() error {
+	if err := defaults.Set(c); err != nil {
+		return err
+	}
+	return verify(c)
+}
+
+func initRouterConfig(rc *RootConfig) error {
+	routers := rc.Router
+	if len(routers) > 0 {
+		for _, r := range routers {
+			if err := r.check(); err != nil {
+				return err
+			}
 		}
-		logger.Warnf("router config type %s create fail {%v}\n", k, e)
+		rc.Router = routers
 	}
-	return perrors.Errorf("no file router exists for parse %s , implement router.FIleRouterFactory please.", confRouterFile)
+
+	//chain.SetVSAndDRConfigByte(vsBytes, drBytes)
+	return nil
 }
 
-// GetRouterURLSet exposes the routerURLSet
-func GetRouterURLSet() *gxset.HashSet {
-	return routerURLSet
-}
+//// LocalRouterRules defines the local router config structure
+//type LocalRouterRules struct {
+//	RouterRules []interface{} `yaml:"routerRules"`
+//}
+//
+//// RouterInit Set config file to init router config
+//func RouterInit(vsConfigPath, drConfigPath string) error {
+//	vsBytes, err := yaml.LoadYMLConfig(vsConfigPath)
+//	if err != nil {
+//		return err
+//	}
+//	drBytes, err := yaml.LoadYMLConfig(drConfigPath)
+//	if err != nil {
+//		return err
+//	}
+//	chain.SetVSAndDRConfigByte(vsBytes, drBytes)
+//	return nil
+//}

@@ -33,22 +33,21 @@ import (
 
 import (
 	"github.com/opentracing/opentracing-go"
+
 	perrors "github.com/pkg/errors"
 )
 
 import (
-	"github.com/apache/dubbo-go/common"
-	"github.com/apache/dubbo-go/common/constant"
-	"github.com/apache/dubbo-go/common/logger"
-	"github.com/apache/dubbo-go/protocol/invocation"
+	"dubbo.apache.org/dubbo-go/v3/common"
+	"dubbo.apache.org/dubbo-go/v3/common/constant"
+	"dubbo.apache.org/dubbo-go/v3/common/logger"
+	"dubbo.apache.org/dubbo-go/v3/protocol/invocation"
 )
 
-var (
-	// A value sent as a placeholder for the server's response value when the server
-	// receives an invalid request. It is never decoded by the client since the Response
-	// contains an error when it is used.
-	invalidRequest = struct{}{}
-)
+// A value sent as a placeholder for the server's response value when the server
+// receives an invalid request. It is never decoded by the client since the Response
+// contains an error when it is used.
+var invalidRequest = struct{}{}
 
 const (
 	// DefaultMaxSleepTime max sleep interval in accept
@@ -92,7 +91,9 @@ func (s *Server) handlePkg(conn net.Conn) {
 			t = time.Now().Add(timeout)
 		}
 
-		conn.SetDeadline(t)
+		if err := conn.SetDeadline(t); err != nil {
+			logger.Error("connection.SetDeadline(t:%v) = error:%v", t, err)
+		}
 	}
 
 	sendErrorResp := func(header http.Header, body []byte) error {
@@ -127,10 +128,10 @@ func (s *Server) handlePkg(conn net.Conn) {
 		}
 
 		reqBody, err := ioutil.ReadAll(r.Body)
+		r.Body.Close()
 		if err != nil {
 			return
 		}
-		r.Body.Close()
 
 		reqHeader := make(map[string]string)
 		for k := range r.Header {
@@ -229,7 +230,7 @@ func accept(listener net.Listener, fn func(net.Conn)) error {
 }
 
 // Start JSON RPC server then ready for accept request.
-func (s *Server) Start(url common.URL) {
+func (s *Server) Start(url *common.URL) {
 	listener, err := net.Listen("tcp", url.Location)
 	if err != nil {
 		logger.Errorf("jsonrpc server [%s] start failed: %v", url.Path, err)
@@ -239,7 +240,9 @@ func (s *Server) Start(url common.URL) {
 
 	s.wg.Add(1)
 	go func() {
-		accept(listener, func(conn net.Conn) { s.handlePkg(conn) })
+		if err := accept(listener, func(conn net.Conn) { s.handlePkg(conn) }); err != nil {
+			logger.Error("accept() = error:%v", err)
+		}
 		s.wg.Done()
 	}()
 
@@ -263,8 +266,7 @@ func (s *Server) Stop() {
 	})
 }
 
-func serveRequest(ctx context.Context,
-	header map[string]string, body []byte, conn net.Conn) error {
+func serveRequest(ctx context.Context, header map[string]string, body []byte, conn net.Conn) error {
 	sendErrorResp := func(header map[string]string, body []byte) error {
 		rsp := &http.Response{
 			Header:        make(http.Header),
@@ -324,13 +326,12 @@ func serveRequest(ctx context.Context,
 		if err == io.EOF || err == io.ErrUnexpectedEOF {
 			return perrors.WithStack(err)
 		}
-
 		return perrors.New("server cannot decode request: " + err.Error())
 	}
+
 	path := header["Path"]
 	methodName := codec.req.Method
 	if len(path) == 0 || len(methodName) == 0 {
-		codec.ReadBody(nil)
 		return perrors.New("service/method request ill-formed: " + path + "/" + methodName)
 	}
 
@@ -345,9 +346,10 @@ func serveRequest(ctx context.Context,
 	exporter, _ := jsonrpcProtocol.ExporterMap().Load(path)
 	invoker := exporter.(*JsonrpcExporter).GetInvoker()
 	if invoker != nil {
-		result := invoker.Invoke(ctx, invocation.NewRPCInvocation(methodName, args, map[string]string{
+		result := invoker.Invoke(ctx, invocation.NewRPCInvocation(methodName, args, map[string]interface{}{
 			constant.PATH_KEY:    path,
-			constant.VERSION_KEY: codec.req.Version}))
+			constant.VERSION_KEY: codec.req.Version,
+		}))
 		if err := result.Error(); err != nil {
 			rspStream, codecErr := codec.Write(err.Error(), invalidRequest)
 			if codecErr != nil {

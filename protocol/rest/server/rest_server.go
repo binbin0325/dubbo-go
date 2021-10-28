@@ -23,7 +23,6 @@ import (
 	"net/http"
 	"reflect"
 	"strconv"
-	"strings"
 )
 
 import (
@@ -31,11 +30,11 @@ import (
 )
 
 import (
-	"github.com/apache/dubbo-go/common"
-	"github.com/apache/dubbo-go/common/logger"
-	"github.com/apache/dubbo-go/protocol"
-	"github.com/apache/dubbo-go/protocol/invocation"
-	rest_config "github.com/apache/dubbo-go/protocol/rest/config"
+	"dubbo.apache.org/dubbo-go/v3/common"
+	"dubbo.apache.org/dubbo-go/v3/common/logger"
+	"dubbo.apache.org/dubbo-go/v3/protocol"
+	"dubbo.apache.org/dubbo-go/v3/protocol/invocation"
+	rest_config "dubbo.apache.org/dubbo-go/v3/protocol/rest/config"
 )
 
 const parseParameterErrorStr = "An error occurred while parsing parameters on the server"
@@ -43,7 +42,7 @@ const parseParameterErrorStr = "An error occurred while parsing parameters on th
 // RestServer user can implement this server interface
 type RestServer interface {
 	// Start rest server
-	Start(url common.URL)
+	Start(url *common.URL)
 	// Deploy a http api
 	Deploy(restMethodConfig *rest_config.RestMethodConfig, routeFunc func(request RestServerRequest, response RestServerResponse))
 	// UnDeploy a http api
@@ -90,7 +89,7 @@ func GetRouteFunc(invoker protocol.Invoker, methodConfig *rest_config.RestMethod
 			err  error
 			args []interface{}
 		)
-		svc := common.ServiceMap.GetService(invoker.GetUrl().Protocol, strings.TrimPrefix(invoker.GetUrl().Path, "/"))
+		svc := common.ServiceMap.GetServiceByServiceKey(invoker.GetURL().Protocol, invoker.GetURL().ServiceKey())
 		// get method
 		method := svc.Method()[methodConfig.MethodName]
 		argsTypes := method.ArgsType()
@@ -111,7 +110,7 @@ func GetRouteFunc(invoker protocol.Invoker, methodConfig *rest_config.RestMethod
 				logger.Errorf("[Go Restful] WriteErrorString error:%v", err)
 			}
 		}
-		result := invoker.Invoke(context.Background(), invocation.NewRPCInvocation(methodConfig.MethodName, args, make(map[string]string)))
+		result := invoker.Invoke(context.Background(), invocation.NewRPCInvocation(methodConfig.MethodName, args, make(map[string]interface{})))
 		if result.Error() != nil {
 			err = resp.WriteError(http.StatusInternalServerError, result.Error())
 			if err != nil {
@@ -258,6 +257,7 @@ func assembleArgsFromQueryParams(methodConfig *rest_config.RestMethodConfig, arg
 		kind := t.Kind()
 		if kind == reflect.Ptr {
 			t = t.Elem()
+			kind = t.Kind()
 		}
 		if kind == reflect.Slice {
 			param = req.QueryParameters(v)
@@ -298,6 +298,7 @@ func assembleArgsFromPathParams(methodConfig *rest_config.RestMethodConfig, args
 		kind := t.Kind()
 		if kind == reflect.Ptr {
 			t = t.Elem()
+			kind = t.Kind()
 		}
 		if kind == reflect.Int {
 			param, err = strconv.Atoi(req.PathParameter(v))

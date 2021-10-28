@@ -1,4 +1,5 @@
-<!--  Thanks for sending a pull request! 
+<!--  Thanks for sending a pull request!
+Read https://github.com/apache/dubbo-go/blob/master/CONTRIBUTING.md before commit pull request.
 -->
 
 **What this PR does**:

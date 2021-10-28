@@ -26,11 +26,12 @@ import (
 import (
 	"github.com/stretchr/testify/assert"
 )
+
 import (
-	"github.com/apache/dubbo-go/common"
-	"github.com/apache/dubbo-go/common/extension"
-	"github.com/apache/dubbo-go/protocol"
-	"github.com/apache/dubbo-go/protocol/invocation"
+	"dubbo.apache.org/dubbo-go/v3/common"
+	"dubbo.apache.org/dubbo-go/v3/common/extension"
+	"dubbo.apache.org/dubbo-go/v3/protocol"
+	"dubbo.apache.org/dubbo-go/v3/protocol/invocation"
 )
 
 func TestPrometheusReporter_Report(t *testing.T) {
@@ -43,7 +44,7 @@ func TestPrometheusReporter_Report(t *testing.T) {
 			"service.filter=echo%2Ctoken%2Caccesslog&timestamp=1569153406&token=934804bf-b007-4174-94eb-96e3e1d60cc7&version=&warmup=100")
 	invoker := protocol.NewBaseInvoker(url)
 
-	attach := make(map[string]string, 10)
+	attach := make(map[string]interface{}, 10)
 	inv := invocation.NewRPCInvocation("MethodName", []interface{}{"OK", "Hello"}, attach)
 
 	assert.False(t, isConsumer(url))

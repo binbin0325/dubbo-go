@@ -1,190 +1,73 @@
-# Apache Dubbo-go [中文](./README_CN.md) #
+# Apache Dubbo-go
 
-[![Build Status](https://travis-ci.org/apache/dubbo-go.svg?branch=master)](https://travis-ci.org/apache/dubbo-go)
+[![Build Status](https://github.com/apache/dubbo-go/workflows/CI/badge.svg)](https://travis-ci.org/apache/dubbo-go)
 [![codecov](https://codecov.io/gh/apache/dubbo-go/branch/master/graph/badge.svg)](https://codecov.io/gh/apache/dubbo-go)
 [![go.dev reference](https://img.shields.io/badge/go.dev-reference-007d9c?logo=go&logoColor=white&style=flat-square)](https://pkg.go.dev/github.com/apache/dubbo-go?tab=doc)
 [![Go Report Card](https://goreportcard.com/badge/github.com/apache/dubbo-go)](https://goreportcard.com/report/github.com/apache/dubbo-go)
 ![license](https://img.shields.io/badge/license-Apache--2.0-green.svg)
 
 ---
-Apache Dubbo Go Implementation.
 
+[中文 🇨🇳](./README_CN.md)
 
-## License
+Apache Dubbo-go, a Dubbo implementation written in Golang, is born to bridge the gap between Java and Golang. Please visit our [official website](https://dubbogo.github.io) for the quick start and documentation.
 
-Apache License, Version 2.0
+## Architecture
 
-## Release note ##
+![dubbo go extend](https://dubbogo.github.io/img/doc/dubbo-go3.0-arch.jpg)
 
-[v1.5.1 - Aug 23, 2020](https://github.com/apache/dubbo-go/releases/tag/v1.5.1)
+Dubbo-go has been implemented most layers of Dubbo, like protocol layer, registry layer, etc. An extension module is applied to Dubbo-go in order to achieve a more flexible architecture. Developers are allowed to implement a customized layer conformed to the layer interface and use them in Dubbo-go via `extension.Set` method without modifying the source code.
 
-[v1.5.0 - July 24, 2020](https://github.com/apache/dubbo-go/releases/tag/v1.5.0)
+## Features
 
-[v1.4.0 - Mar 17, 2020](https://github.com/apache/dubbo-go/releases/tag/v1.4.0)
+The features that are available for Dubbo-go are:
 
-[v1.3.0 - Mar 1, 2020](https://github.com/apache/dubbo-go/releases/tag/v1.3.0)
+- **Role**: Consumer, Provider
+- **Transport**: HTTP, TCP
+- **Codec**: JsonRPC V2, Hessian V2, [Json for gRPC](https://github.com/apache/dubbo-go/pull/582), Protocol Buffers
+- **Protocol**: Dubbo, [Triple](https://github.com/dubbogo/triple), JsonRPC V2, [gRPC](https://github.com/apache/dubbo-go/pull/311), [RESTful](https://github.com/apache/dubbo-go/pull/352)
+- **Router**: [Dubbo3 Router](https://github.com/apache/dubbo-go/pull/1187)
+- **Registry**: ZooKeeper, [etcd](https://github.com/apache/dubbo-go/pull/148), [Nacos](https://github.com/apache/dubbo-go/pull/151), [Consul](https://github.com/apache/dubbo-go/pull/121), [K8s](https://github.com/apache/dubbo-go/pull/400)
+- **Dynamic Configure Center & Service Management Configurator**: Zookeeper, [Apollo](https://github.com/apache/dubbo-go/pull/250), [Nacos](https://github.com/apache/dubbo-go/pull/357)
+- **Cluster Strategy**: Failover, [Failfast](https://github.com/apache/dubbo-go/pull/140), [Failsafe/Failback](https://github.com/apache/dubbo-go/pull/136), [Available](https://github.com/apache/dubbo-go/pull/155), [Broadcast](https://github.com/apache/dubbo-go/pull/158), [Forking](https://github.com/apache/dubbo-go/pull/161)
+- **Load Balance**: Random, [RoundRobin](https://github.com/apache/dubbo-go/pull/66), [LeastActive](https://github.com/apache/dubbo-go/pull/65), [ConsistentHash](https://github.com/apache/dubbo-go/pull/261)
+- [**Filter**](./filter): Echo, Hystrix, Token, AccessLog, TpsLimiter, ExecuteLimit, Generic, Auth/Sign, Metrics, Tracing, Active, Seata, Sentinel
+- **Invoke**: [Generic Invoke](https://github.com/apache/dubbo-go/pull/122)
+- **Monitor**: Opentracing API, [Prometheus](https://github.com/apache/dubbo-go/pull/342)
+- **Tracing**: [For JsonRPC](https://github.com/apache/dubbo-go/pull/335), [For Dubbo](https://github.com/apache/dubbo-go/pull/344), [For gRPC](https://github.com/apache/dubbo-go/pull/397)
+- **Metadata Center**: [Nacos(Local)](https://github.com/apache/dubbo-go/pull/522), [ZooKeeper(Local)](https://github.com/apache/dubbo-go/pull/633), [etcd(Local)](https://github.com/apache/dubbo-go/blob/9a5990d9a9c3d5e6633c0d7d926c156416bcb931/metadata/report/etcd/report.go), [Consul(Local)](https://github.com/apache/dubbo-go/pull/633), [ZooKeeper(Remoting)](https://github.com/apache/dubbo-go/pull/1161)
+- **Tool**: [Dubbo-go-cli](https://github.com/dubbogo/tools)
 
-[v1.2.0 - Nov 15, 2019](https://github.com/apache/dubbo-go/releases/tag/v1.2.0)
+## Getting started
 
-[v1.1.0 - Sep 7, 2019 the first release after transferred to apache](https://github.com/apache/dubbo-go/releases/tag/v1.1.0)
+### Install Dubbo-go v3
 
-[v1.0.0 - May 29, 2019 compatible with dubbo v2.6.5](https://github.com/apache/dubbo-go/releases/tag/v1.0.0)
-
-## Project Architecture ##
-
-Both extension module and layered project architecture is according to Apache Dubbo (including protocol layer, registry layer, cluster layer, config layer and so on), the advantage of this arch is as following: you can implement these layered interfaces in your own way, override the default implementation of dubbo-go by calling 'extension.SetXXX' of extension, complete your special needs without modifying the source code. At the same time, you are welcome to contribute implementation of useful extension to the community.
-
-![dubbo go extend](./doc/pic/arch/dubbo-go-ext.png)
-
-If you wanna know more about dubbo-go, please visit this reference [Project Architecture design](https://github.com/apache/dubbo-go/wiki/dubbo-go-V1.0-design)
-
-## Feature list ##
-
-Finished List:
-
-- Role
-    * Consumer
-    * Provider
-
-- Transport
-    * HTTP
-    * TCP
-
-- Codec
-    * JsonRPC V2
-    * Hessian V2
-    * [json for grpc](https://github.com/apache/dubbo-go/pull/582)
-
-- Protocol
-    * Dubbo
-    * Jsonrpc2.0
-    * [gRPC](https://github.com/apache/dubbo-go/pull/311)
-    * [RESTful](https://github.com/apache/dubbo-go/pull/352)
-    
-- Router
-    * [Condition router](https://github.com/apache/dubbo-go/pull/294)
-    * [Health check router](https://github.com/apache/dubbo-go/pull/389)
-
-- Registry
-    * ZooKeeper
-    * [etcd v3](https://github.com/apache/dubbo-go/pull/148)
-    * [nacos](https://github.com/apache/dubbo-go/pull/151)
-    * [consul](https://github.com/apache/dubbo-go/pull/121)
-    * [k8s](https://github.com/apache/dubbo-go/pull/400)
-
-- Dynamic Configure Center & Service Management Configurator
-    * Zookeeper
-    * [apollo](https://github.com/apache/dubbo-go/pull/250)
-    * [nacos](https://github.com/apache/dubbo-go/pull/357)
-
-- Cluster Strategy
-    * Failover
-    * [Failfast](https://github.com/apache/dubbo-go/pull/140)
-    * [Failsafe/Failback](https://github.com/apache/dubbo-go/pull/136)
-    * [Available](https://github.com/apache/dubbo-go/pull/155)
-    * [Broadcast](https://github.com/apache/dubbo-go/pull/158)
-    * [Forking](https://github.com/apache/dubbo-go/pull/161)
-
-- Load Balance
-    * Random
-    * [RoundRobin](https://github.com/apache/dubbo-go/pull/66)
-    * [LeastActive](https://github.com/apache/dubbo-go/pull/65)
-    * [ConsistentHash](https://github.com/apache/dubbo-go/pull/261)
-
-- Filter
-    * Echo Health Check
-    * [Circuit break and service downgrade](https://github.com/apache/dubbo-go/pull/133)
-    * [TokenFilter](https://github.com/apache/dubbo-go/pull/202)
-    * [AccessLogFilter](https://github.com/apache/dubbo-go/pull/214)
-    * [TpsLimitFilter](https://github.com/apache/dubbo-go/pull/237)
-    * [ExecuteLimitFilter](https://github.com/apache/dubbo-go/pull/246)
-    * [GenericServiceFilter](https://github.com/apache/dubbo-go/pull/291)
-    * [Auth/Sign](https://github.com/apache/dubbo-go/pull/323)
-    * [Metrics filter](https://github.com/apache/dubbo-go/pull/342)
-    * [Tracing filter](https://github.com/apache/dubbo-go/pull/335)
-
-- Invoke
-    * [generic invoke](https://github.com/apache/dubbo-go/pull/122)
-    
-- Monitor
-    * Opentracing API
-    * [Prometheus](https://github.com/apache/dubbo-go/pull/342)
-
-- Tracing
-    * [For jsonrpc](https://github.com/apache/dubbo-go/pull/335)
-    * [For dubbo](https://github.com/apache/dubbo-go/pull/344)
-    * [For grpc](https://github.com/apache/dubbo-go/pull/397)
-
-- Metadata Center
-    * [Nacos](https://github.com/apache/dubbo-go/pull/522)
-    * [Zookeeper](https://github.com/apache/dubbo-go/pull/633)
-    * [Etcd](https://github.com/apache/dubbo-go/blob/9a5990d9a9c3d5e6633c0d7d926c156416bcb931/metadata/report/etcd/report.go)
-    * [Consul](https://github.com/apache/dubbo-go/pull/633)
-
-- Service discovery
-    * [Nacos](https://github.com/apache/dubbo-go/blob/9a5990d9a9c3d5e6633c0d7d926c156416bcb931/registry/nacos/service_discovery.go)
-    * [Zookeeper](https://github.com/apache/dubbo-go/blob/9a5990d9a9c3d5e6633c0d7d926c156416bcb931/registry/zookeeper/service_discovery.go)
-    * [Etcd](https://github.com/apache/dubbo-go/blob/9a5990d9a9c3d5e6633c0d7d926c156416bcb931/registry/etcdv3/service_discovery.go)
-
-- Others:
-    * start check
-    * connecting certain provider
-    * multi-protocols
-    * multi-registries
-    * multi-versions
-    * service group
-
-You can know more about dubbo-go by its [roadmap](https://github.com/apache/dubbo-go/wiki/Roadmap).
-
-![feature](./doc/pic/arch/dubbo-go-arch.png)
-
-## Document
-
-https://dubbogo.github.io/dubbo-go-website (**Improving**)
-
-## Quick Start
-
-[dubbo-samples/golang](https://github.com/dubbogo/dubbo-samples) shows how to use dubbo-go. Please read the [dubbo-samples/golang/README.md](https://github.com/dubbogo/dubbo-samples/blob/master/golang/README.md) carefully to learn how to dispose the configuration and compile the program.
-
-## Running unit tests
-
-### Prepare
-
-Mac/Linux
-```bash
-sh ./before_ut.sh
+```
+go get dubbo.apache.org/dubbo-go/v3
 ```
 
-Windows
-```bash
-before_ut.bat
-```
+### Next steps
 
-### Run
-```bash
-go test ./...
-
-# coverage
-go test ./... -coverprofile=coverage.txt -covermode=atomic
-```
-
-## Build
-
-Please move to [dubbo-samples/golang](https://github.com/dubbogo/dubbo-samples)
+- [Dubbo-go Samples](https://github.com/apache/dubbo-go-samples): The project gives a series of samples that show each feature available for Dubbo-go and help you know how to integrate Dubbo-go with your system.
+- Dubbo-go Quick Start: [中文 🇨🇳](https://dubbogo.github.io/zh-cn/docs/user/quickstart/3.0/quickstart.html), [English 🇺🇸](https://dubbogo.github.io/en-us/docs/user/quick-start.html)
+- [Dubbo-go Benchmark](https://github.com/dubbogo/dubbo-go-benchmark)
+- [Dubbo-go Wiki](https://github.com/apache/dubbo-go/wiki)
 
 ## Contributing
 
-If you are willing to do some code contributions and document contributions to [Apache/dubbo-go](https://github.com/apache/dubbo-go), please visit [contribution intro](https://github.com/apache/dubbo-go/blob/master/contributing.md).
+Please visit [CONTRIBUTING](./CONTRIBUTING.md) for details on submitting patches and the contribution workflow.
 
-## Benchmark
+## Reporting bugs
 
-Benchmark project [dubbo-go-benchmark](https://github.com/dubbogo/dubbo-go-benchmark).
+Please use the [bug report template](issues/new?template=bug-report.md) to report bugs, use the [enhancement template](issues/new?template=enhancement.md) to provide suggestions for improvement.
 
-About dubbo-go benchmarking report, please refer to [dubbo benchmarking report](https://github.com/apache/dubbo-go/wiki/Benchmark-test-of-dubbo) & [jsonrpc benchmarking report](https://github.com/apache/dubbo-go/wiki/Benchmark-test-of-jsonrpc).
+## Contact
+
+- [DingTalk Group](https://www.dingtalk.com/en): 23331795
 
 ## [User List](https://github.com/apache/dubbo-go/issues/2)
 
-If you are using [apache/dubbo-go](github.com/apache/dubbo-go) and think that it helps you or want do some contributions to it, please add your company to to [the user list](https://github.com/apache/dubbo-go/issues/2) to let us know your needs.
+If you are using [apache/dubbo-go](https://github.com/apache/dubbo-go) and think that it helps you or want to contribute code for Dubbo-go, please add your company to [the user list](https://github.com/apache/dubbo-go/issues/2) to let us know your needs.
 
 
 <div>
@@ -212,8 +95,75 @@ If you are using [apache/dubbo-go](github.com/apache/dubbo-go) and think that it
           <img width="222px"  src="https://raw.githubusercontent.com/mosn/community/master/icons/png/mosn-labeled-horizontal.png">
         </a>
       </td>
+      <td align="center"  valign="middle">
+        <a href="" target="_blank">
+          <img width="222px"  src="https://festatic.estudy.cn/assets/xhx-web/layout/logo.png">
+        </a>
+      </td>
+    </tr>
+    <tr></tr>
+    <tr>
+      <td align="center"  valign="middle">
+        <a href="http://www.j.cn" target="_blank">
+          <img width="222px"  src="http://image.guang.j.cn/bbs/imgs/home/pc/icon_8500.png">
+        </a>
+      </td>
+      <td align="center"  valign="middle">
+        <a href="https://www.genshuixue.com/" target="_blank">
+          <img width="222px"  src="https://i.gsxcdn.com/0cms/d/file/content/2020/02/5e572137d7d94.png">
+        </a>
+      </td>
+      <td align="center"  valign="middle">
+        <a href="http://www.51h5.com" target="_blank">
+          <img width="222px"  src="https://fs-ews.51h5.com/common/hw_220_black.png">
+        </a>
+      </td>
+      <td align="center"  valign="middle">
+        <a href="https://www.zto.com" target="_blank">
+          <img width="222px"  src="https://fscdn.zto.com/fs8/M02/B2/E4/wKhBD1-8o52Ae3GnAAASU3r62ME040.png">
+        </a>
+      </td>
+      <td align="center"  valign="middle">
+        <a href="https://www.icsoc.net/" target="_blank">
+          <img width="222px"  src="https://oss.icsoc.net/icsoc-ekt-test-files/icsoc.png">
+        </a>
+      </td>
+    </tr>
+    <tr></tr>
+    <tr>
+      <td align="center"  valign="middle">
+        <a href="http://www.mgtv.com" target="_blank">
+          <img width="222px"  src="https://ugc.hitv.com/platform_oss/F6077F1AA82542CDBDD88FD518E6E727.png">
+        </a>
+      </td>
+      <td align="center"  valign="middle">
+        <a href="http://www.dmall.com" target="_blank">
+          <img width="222px"  src="https://mosn.io/images/community/duodian.png">
+        </a>
+      </td>
+      <td align="center"  valign="middle">
+        <a href="http://www.ruubypay.com" target="_blank">
+           <img width="222px"  src="http://website.ruubypay.com/wifi/image/line5.png">
+        </a>
+      </td>
+      <td align="center"  valign="middle">
+          <a href="https://www.dingtalk.com" target="_blank">
+             <img width="222px"  src="https://gw.alicdn.com/tfs/TB1HPATMrrpK1RjSZTEXXcWAVXa-260-74.png">
+          </a>
+      </td>
+      <td align="center"  valign="middle">
+          <a href="https://www.autohome.com.cn" target="_blank">
+             <img width="222px"  src="https://avatars.githubusercontent.com/u/18279051?s=200&v=4">
+          </a>
+      </td>      
     </tr>
     <tr></tr>
   </tbody>
 </table>
 </div>
+
+[See more user cases](https://github.com/apache/dubbo-go/issues/2)
+
+## License
+
+Apache Dubbo-go software is licenced under the Apache License Version 2.0. See the LICENSE file for details.

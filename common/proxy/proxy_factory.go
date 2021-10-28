@@ -18,15 +18,15 @@
 package proxy
 
 import (
-	"github.com/apache/dubbo-go/common"
-	"github.com/apache/dubbo-go/protocol"
+	"dubbo.apache.org/dubbo-go/v3/common"
+	"dubbo.apache.org/dubbo-go/v3/protocol"
 )
 
 // ProxyFactory interface.
 type ProxyFactory interface {
 	GetProxy(invoker protocol.Invoker, url *common.URL) *Proxy
 	GetAsyncProxy(invoker protocol.Invoker, callBack interface{}, url *common.URL) *Proxy
-	GetInvoker(url common.URL) protocol.Invoker
+	GetInvoker(url *common.URL) protocol.Invoker
 }
 
 // Option will define a function of handling ProxyFactory

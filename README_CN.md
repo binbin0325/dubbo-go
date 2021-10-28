@@ -1,186 +1,73 @@
-# Apache Dubbo-go [English](./README.md) #
+# Apache Dubbo-go
 
-[![Build Status](https://travis-ci.org/apache/dubbo-go.svg?branch=master)](https://travis-ci.org/apache/dubbo-go)
+[![Build Status](https://github.com/apache/dubbo-go/workflows/CI/badge.svg)](https://travis-ci.org/apache/dubbo-go)
 [![codecov](https://codecov.io/gh/apache/dubbo-go/branch/master/graph/badge.svg)](https://codecov.io/gh/apache/dubbo-go)
 [![go.dev reference](https://img.shields.io/badge/go.dev-reference-007d9c?logo=go&logoColor=white&style=flat-square)](https://pkg.go.dev/github.com/apache/dubbo-go?tab=doc)
 [![Go Report Card](https://goreportcard.com/badge/github.com/apache/dubbo-go)](https://goreportcard.com/report/github.com/apache/dubbo-go)
 ![license](https://img.shields.io/badge/license-Apache--2.0-green.svg)
 
 ---
-Apache Dubbo Go 语言实现
 
-## 证书 ##
+[English 🇺🇸](./README.md)
 
-Apache License, Version 2.0
+Apache Dubbo Go 语言实现，架起 Java 和 Golang 之间的桥梁，与 gRPC/Spring Cloud 生态互联互通，带领 Java 生态享受云原生时代的技术红利。请访问我们的[官方网站](https://dubbogo.github.io)查看快速开始和文档。
 
-## 发布日志 ##
+## 架构
 
-[v1.5.0 - 2020年7月24日](https://github.com/apache/dubbo-go/releases/tag/v1.5.0)
+![dubbo go extend](https://dubbogo.github.io/img/doc/dubbo-go3.0-arch.jpg)
 
-[v1.4.0 - 2020年3月17日](https://github.com/apache/dubbo-go/releases/tag/v1.4.0)
+Dubbo-go已经实现了Dubbo的大部分层级，包括协议层（protocol layer）、注册层（registry layer)）等等。在Dubbo-go中使用了拓展模块（extension module）以实现更灵活的系统架构，开发者可以根据层接口实现一个自定义的层，并在不改动源代码的前提下通过`extension.Set`方法将它应用到Dubbo-go中。
 
-[v1.3.0 - 2020年3月1日](https://github.com/apache/dubbo-go/releases/tag/v1.3.0)
+## 特性
 
-[v1.2.0 - 2019年11月15日](https://github.com/apache/dubbo-go/releases/tag/v1.2.0)
+Dubbo-go中已实现的特性：
 
-[v1.1.0 - 2019年9月7日 捐献给Apache之后的第一次release](https://github.com/apache/dubbo-go/releases/tag/v1.1.0)
+- **角色**: Consumer, Provider
+- **传输协议**: HTTP, TCP
+- **序列化协议**: JsonRPC V2, Hessian V2, [Json for gRPC](https://github.com/apache/dubbo-go/pull/582), Protocol Buffers
+- **协议**: Dubbo, [Triple](https://github.com/dubbogo/triple), JsonRPC V2, [gRPC](https://github.com/apache/dubbo-go/pull/311), [RESTful](https://github.com/apache/dubbo-go/pull/352)
+- **路由器**: [Dubbo3 Router](https://github.com/apache/dubbo-go/pull/1187)
+- **注册中心**: ZooKeeper, [etcd](https://github.com/apache/dubbo-go/pull/148), [Nacos](https://github.com/apache/dubbo-go/pull/151), [Consul](https://github.com/apache/dubbo-go/pull/121), [K8s](https://github.com/apache/dubbo-go/pull/400)
+- **动态配置中心与服务治理配置器**: Zookeeper, [Apollo](https://github.com/apache/dubbo-go/pull/250), [Nacos](https://github.com/apache/dubbo-go/pull/357)
+- **集群策略**: Failover, [Failfast](https://github.com/apache/dubbo-go/pull/140), [Failsafe/Failback](https://github.com/apache/dubbo-go/pull/136), [Available](https://github.com/apache/dubbo-go/pull/155), [Broadcast](https://github.com/apache/dubbo-go/pull/158), [Forking](https://github.com/apache/dubbo-go/pull/161)
+- **负载均衡策略**: Random, [RoundRobin](https://github.com/apache/dubbo-go/pull/66), [LeastActive](https://github.com/apache/dubbo-go/pull/65), [ConsistentHash](https://github.com/apache/dubbo-go/pull/261)
+- [**过滤器**](./filter): Echo, Hystrix, Token, AccessLog, TpsLimiter, ExecuteLimit, Generic, Auth/Sign, Metrics, Tracing, Active, Seata, Sentinel
+- **调用**: [Generic Invoke](https://github.com/apache/dubbo-go/pull/122)
+- **监控**: Opentracing API, [Prometheus](https://github.com/apache/dubbo-go/pull/342)
+- **Tracing**: [For JsonRPC](https://github.com/apache/dubbo-go/pull/335), [For Dubbo](https://github.com/apache/dubbo-go/pull/344), [For gRPC](https://github.com/apache/dubbo-go/pull/397)
+- **元数据中心**: [Nacos(Local)](https://github.com/apache/dubbo-go/pull/522), [ZooKeeper(Local)](https://github.com/apache/dubbo-go/pull/633), [etcd(Local)](https://github.com/apache/dubbo-go/blob/9a5990d9a9c3d5e6633c0d7d926c156416bcb931/metadata/report/etcd/report.go), [Consul(Local)](https://github.com/apache/dubbo-go/pull/633), [ZooKeeper(Remoting)](https://github.com/apache/dubbo-go/pull/1161)
+- **工具**: [Dubbo-go-cli](https://github.com/dubbogo/tools)
 
-[v1.0.0 - 2019年5月29日 兼容dubbo v2.6.5 版本](https://github.com/apache/dubbo-go/releases/tag/v1.0.0)
+## 开始
 
-## 工程架构 ##
+### 安装 Dubbo-go v3
 
-基于dubbo的extension模块和分层的代码设计(包括 protocol layer, registry layer, cluster layer, config 等等)。我们的目标是：你可以对这些分层接口进行新的实现，并通过调用 extension 模块的“ extension.SetXXX ”方法来覆盖 dubbo-go [同 go-for-apache-dubbo ]的默认实现，以完成自己的特殊需求而无需修改源代码。同时，欢迎你为社区贡献有用的拓展实现。
-
-![dubbo go extend](./doc/pic/arch/dubbo-go-ext.png)
-
-关于详细设计请阅读 [code layered design](https://github.com/apache/dubbo-go/wiki/dubbo-go-V1.0-design)
-
-## 功能列表 ##
-
-实现列表:
-
-- 角色端
-    * Consumer
-    * Provider
-
-- 传输协议
-    * HTTP
-    * TCP
-
-- 序列化协议
-    * JsonRPC V2
-    * Hessian V2
-    * [json for grpc](https://github.com/apache/dubbo-go/pull/582)
-
-- 协议
-    * Dubbo
-    * Jsonrpc2.0
-    * [gRPC](https://github.com/apache/dubbo-go/pull/311)
-    * [RESTful](https://github.com/apache/dubbo-go/pull/352)
-    
-- 路由器
-    * [Condition router](https://github.com/apache/dubbo-go/pull/294)
-    * [Health check router](https://github.com/apache/dubbo-go/pull/389)
-    
-- 注册中心
-    * ZooKeeper
-    * [etcd v3](https://github.com/apache/dubbo-go/pull/148)
-    * [nacos](https://github.com/apache/dubbo-go/pull/151)
-    * [consul](https://github.com/apache/dubbo-go/pull/121)
-    * [k8s](https://github.com/apache/dubbo-go/pull/400)
-
-- 动态配置中心与服务治理配置器
-    * Zookeeper
-    * [apollo](https://github.com/apache/dubbo-go/pull/250)
-    * [nacos](https://github.com/apache/dubbo-go/pull/357)
-
-- 集群策略
-    * Failover
-    * [Failfast](https://github.com/apache/dubbo-go/pull/140)
-    * [Failsafe/Failback](https://github.com/apache/dubbo-go/pull/136)
-    * [Available](https://github.com/apache/dubbo-go/pull/155)
-    * [Broadcast](https://github.com/apache/dubbo-go/pull/158)
-    * [Forking](https://github.com/apache/dubbo-go/pull/161)
-
-- 负载均衡策略
-    * Random
-    * [RoundRobin](https://github.com/apache/dubbo-go/pull/66)
-    * [LeastActive](https://github.com/apache/dubbo-go/pull/65)
-    * [ConsistentHash](https://github.com/apache/dubbo-go/pull/261)
-
-- 过滤器
-    * Echo Health Check
-    * [服务熔断&降级](https://github.com/apache/dubbo-go/pull/133)
-    * [TokenFilter](https://github.com/apache/dubbo-go/pull/202)
-    * [AccessLogFilter](https://github.com/apache/dubbo-go/pull/214)
-    * [TpsLimitFilter](https://github.com/apache/dubbo-go/pull/237)
-    * [ExecuteLimitFilter](https://github.com/apache/dubbo-go/pull/246)
-    * [Auth/Sign](https://github.com/apache/dubbo-go/pull/323)
-    * [Metrics filter](https://github.com/apache/dubbo-go/pull/342)
-    * [Tracing filter](https://github.com/apache/dubbo-go/pull/335)
-
-- 调用
-    * [泛化调用](https://github.com/apache/dubbo-go/pull/122)
-    
-- 监控
-    * Opentracing API
-    * [Prometheus](https://github.com/apache/dubbo-go/pull/342)
-
-- Tracing
-    * [For jsonrpc](https://github.com/apache/dubbo-go/pull/335)
-    * [For dubbo](https://github.com/apache/dubbo-go/pull/344)
-    * [For grpc](https://github.com/apache/dubbo-go/pull/397)
-
-- 元数据中心
-    * [Nacos](https://github.com/apache/dubbo-go/pull/522)
-    * [Zookeeper](https://github.com/apache/dubbo-go/pull/633)
-    * [Etcd](https://github.com/apache/dubbo-go/blob/9a5990d9a9c3d5e6633c0d7d926c156416bcb931/metadata/report/etcd/report.go)
-    * [Consul](https://github.com/apache/dubbo-go/pull/633)
-
-- 服务发现
-    * [Nacos](https://github.com/apache/dubbo-go/blob/9a5990d9a9c3d5e6633c0d7d926c156416bcb931/registry/nacos/service_discovery.go)
-    * [Zookeeper](https://github.com/apache/dubbo-go/blob/9a5990d9a9c3d5e6633c0d7d926c156416bcb931/registry/zookeeper/service_discovery.go)
-    * [Etcd](https://github.com/apache/dubbo-go/blob/9a5990d9a9c3d5e6633c0d7d926c156416bcb931/registry/etcdv3/service_discovery.go)
-
-- 其他功能支持:
-    * 启动时检查
-    * 服务直连
-    * 多服务协议
-    * 多注册中心
-    * 多服务版本
-    * 服务分组
-
-你可以通过访问 [roadmap](https://github.com/apache/dubbo-go/wiki/Roadmap) 知道更多关于 dubbo-go 的信息。
-
-![feature](./doc/pic/arch/dubbo-go-arch.png)
-
-## 文档
-
-https://dubbogo.github.io/dubbo-go-website (**完善中**)
-
-## 快速开始 ##
-
-[dubbo-samples/golang](https://github.com/dubbogo/dubbo-samples)这个项目的事例展示了如何使用 dubbo-go 。请仔细阅读 [dubbo-samples/golang/README.md](https://github.com/dubbogo/dubbo-samples/blob/master/golang/README.md) 学习如何处理配置并编译程序。
-
-## 运行单测
-
-### 准备
-
-Mac/Linux
-```bash
-sh ./before_ut.sh
+```
+go get dubbo.apache.org/dubbo-go/v3
 ```
 
-Windows
-```bash
-before_ut.bat
-```
+### 下一步
 
-### 执行
-```bash
-go test ./...
-
-# coverage
-go test ./... -coverprofile=coverage.txt -covermode=atomic
-```
-
-## 编译
-
-请移步 [dubbo-samples/golang](https://github.com/dubbogo/dubbo-samples)
+- [Dubbo-go 样例](https://github.com/apache/dubbo-go-samples): 该项目提供了一系列的样例，以展示Dubbo-go的每一项特性以及帮助你将Dubbo-go集成到你的系统中。
+- Dubbo-go 快速开始: [中文 🇨🇳](https://dubbogo.github.io/zh-cn/docs/user/quickstart/3.0/quickstart.html), [English 🇺🇸](https://dubbogo.github.io/en-us/docs/user/quick-start.html)
+- [Dubbo-go 基准测试](https://github.com/dubbogo/dubbo-go-benchmark)
+- [Dubbo-go 百科](https://github.com/apache/dubbo-go/wiki)
 
 ## 如何贡献
 
-如果您愿意给 [Apache/dubbo-go](https://github.com/apache/dubbo-go) 贡献代码或者文档，我们都热烈欢迎。具体请参考 [contribution intro](https://github.com/apache/dubbo-go/blob/master/contributing.md)。
+请访问[CONTRIBUTING](./CONTRIBUTING.md)来了解如何提交更新以及贡献工作流。
 
-## 性能测试 ##
+## 报告问题
 
-性能测试项目是 [dubbo-go-benchmark](https://github.com/dubbogo/dubbo-go-benchmark)。
+请使用[bug report 模板](issues/new?template=bug-report.md)报告错误，使用[enhancement 模版](issues/new?template=enhancement.md)提交改进建议。
 
-关于 dubbo-go 性能测试报告，请阅读 [dubbo benchmarking report](https://github.com/apache/dubbo-go/wiki/Benchmark-test-of-dubbo) & [jsonrpc benchmarking report](https://github.com/apache/dubbo-go/wiki/Benchmark-test-of-jsonrpc)。
+## 联系
 
-## [User List](https://github.com/apache/dubbo-go/issues/2)
+- [钉钉群](https://www.dingtalk.com/): 23331795
 
-若你正在使用 [apache/dubbo-go](github.com/apache/dubbo-go) 且认为其有用或者想对其做改进，请添列贵司信息于 [用户列表](https://github.com/apache/dubbo-go/issues/2)，以便我们知晓。
+## [用户列表](https://github.com/apache/dubbo-go/issues/2)
+
+若你正在使用 [apache/dubbo-go](https://github.com/apache/dubbo-go) 且认为其有用或者想对其做改进，请添列贵司信息于 [用户列表](https://github.com/apache/dubbo-go/issues/2)，以便我们知晓。
 
 <div>
 <table>
@@ -207,8 +94,75 @@ go test ./... -coverprofile=coverage.txt -covermode=atomic
           <img width="222px"  src="https://raw.githubusercontent.com/mosn/community/master/icons/png/mosn-labeled-horizontal.png">
         </a>
       </td>
+      <td align="center"  valign="middle">
+        <a href="" target="_blank">
+          <img width="222px"  src="https://festatic.estudy.cn/assets/xhx-web/layout/logo.png">
+        </a>
+      </td>
+    </tr>
+    <tr></tr>
+    <tr>
+      <td align="center"  valign="middle">
+        <a href="http://www.j.cn" target="_blank">
+          <img width="222px"  src="http://image.guang.j.cn/bbs/imgs/home/pc/icon_8500.png">
+        </a>
+      </td>
+      <td align="center"  valign="middle">
+        <a href="https://www.genshuixue.com/" target="_blank">
+          <img width="222px"  src="https://i.gsxcdn.com/0cms/d/file/content/2020/02/5e572137d7d94.png">
+        </a>
+      </td>
+      <td align="center"  valign="middle">
+        <a href="http://www.51h5.com" target="_blank">
+          <img width="222px"  src="https://fs-ews.51h5.com/common/hw_220_black.png">
+        </a>
+      </td>
+      <td align="center"  valign="middle">
+        <a href="https://www.zto.com" target="_blank">
+          <img width="222px"  src="https://fscdn.zto.com/fs8/M02/B2/E4/wKhBD1-8o52Ae3GnAAASU3r62ME040.png">
+        </a>
+      </td>
+      <td align="center"  valign="middle">
+        <a href="https://www.icsoc.net/" target="_blank">
+          <img width="222px"  src="https://oss.icsoc.net/icsoc-ekt-test-files/icsoc.png">
+        </a>
+      </td>
+    </tr>
+    <tr></tr>
+    <tr>
+      <td align="center"  valign="middle">
+        <a href="http://www.mgtv.com" target="_blank">
+          <img width="222px"  src="https://ugc.hitv.com/platform_oss/F6077F1AA82542CDBDD88FD518E6E727.png">
+        </a>
+      </td>
+	    <td align="center"  valign="middle">
+        <a href="http://www.dmall.com" target="_blank">
+          <img width="222px"  src="https://mosn.io/images/community/duodian.png">
+        </a>
+      </td>
+      <td align="center"  valign="middle">
+        <a href="http://www.ruubypay.com" target="_blank">
+           <img width="222px"  src="http://website.ruubypay.com/wifi/image/line5.png">
+        </a>
+      </td>
+      <td align="center"  valign="middle">
+        <a href="https://www.dingtalk.com" target="_blank">
+           <img width="222px"  src="https://gw.alicdn.com/tfs/TB1HPATMrrpK1RjSZTEXXcWAVXa-260-74.png">
+        </a>
+      </td>
+      <td align="center"  valign="middle">
+          <a href="https://www.autohome.com.cn" target="_blank">
+             <img width="222px"  src="https://avatars.githubusercontent.com/u/18279051?s=200&v=4">
+          </a>
+      </td>       
     </tr>
     <tr></tr>
   </tbody>
 </table>
 </div>
+
+[查看更多用户示例](https://github.com/apache/dubbo-go/issues/2)
+
+## 许可证
+
+Apache Dubbo-go使用Apache许可证2.0版本，请参阅LICENSE文件了解更多。

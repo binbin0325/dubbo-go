@@ -19,20 +19,19 @@ package kubernetes
 
 import (
 	"strconv"
-	"sync"
 	"testing"
 )
 
 import (
-	"github.com/apache/dubbo-go/common"
-	"github.com/apache/dubbo-go/common/constant"
+	"dubbo.apache.org/dubbo-go/v3/common"
+	"dubbo.apache.org/dubbo-go/v3/common/constant"
 )
 
 type mockFacade struct {
 	*common.URL
-	client  *Client
-	cltLock sync.Mutex
-	done    chan struct{}
+	client *Client
+	// cltLock sync.Mutex
+	// done    chan struct{}
 }
 
 func (r *mockFacade) Client() *Client {
@@ -43,8 +42,8 @@ func (r *mockFacade) SetClient(client *Client) {
 	r.client = client
 }
 
-func (r *mockFacade) GetUrl() common.URL {
-	return *r.URL
+func (r *mockFacade) GetURL() *common.URL {
+	return r.URL
 }
 
 func (r *mockFacade) Destroy() {
@@ -58,8 +57,8 @@ func (r *mockFacade) RestartCallBack() bool {
 func (r *mockFacade) IsAvailable() bool {
 	return true
 }
-func Test_Facade(t *testing.T) {
 
+func Test_Facade(t *testing.T) {
 	regUrl, err := common.NewURL("registry://127.0.0.1:443",
 		common.WithParamsValue(constant.ROLE_KEY, strconv.Itoa(common.CONSUMER)))
 	if err != nil {
@@ -68,7 +67,7 @@ func Test_Facade(t *testing.T) {
 
 	mockClient := getTestClient(t)
 	m := &mockFacade{
-		URL:    &regUrl,
+		URL:    regUrl,
 		client: mockClient,
 	}
 

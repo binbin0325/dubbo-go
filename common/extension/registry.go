@@ -18,24 +18,21 @@
 package extension
 
 import (
-	"github.com/apache/dubbo-go/common"
-	"github.com/apache/dubbo-go/registry"
+	"dubbo.apache.org/dubbo-go/v3/common"
+	"dubbo.apache.org/dubbo-go/v3/registry"
 )
 
-var (
-	registrys = make(map[string]func(config *common.URL) (registry.Registry, error))
-)
+var registries = make(map[string]func(config *common.URL) (registry.Registry, error))
 
 // SetRegistry sets the registry extension with @name
 func SetRegistry(name string, v func(_ *common.URL) (registry.Registry, error)) {
-	registrys[name] = v
+	registries[name] = v
 }
 
 // GetRegistry finds the registry extension with @name
 func GetRegistry(name string, config *common.URL) (registry.Registry, error) {
-	if registrys[name] == nil {
-		panic("registry for " + name + " does not exist. please make sure that you have imported the package `github.com/apache/dubbo-go/registry/" + name + "`.")
+	if registries[name] == nil {
+		panic("registry for " + name + " does not exist. please make sure that you have imported the package dubbo.apache.org/dubbo-go/v3/registry/" + name + ".")
 	}
-	return registrys[name](config)
-
+	return registries[name](config)
 }

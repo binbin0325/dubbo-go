@@ -18,19 +18,25 @@
 package etcd
 
 import (
+	"encoding/json"
 	"strings"
-	"time"
 )
 
 import (
-	"github.com/apache/dubbo-go/common"
-	"github.com/apache/dubbo-go/common/constant"
-	"github.com/apache/dubbo-go/common/extension"
-	"github.com/apache/dubbo-go/common/logger"
-	"github.com/apache/dubbo-go/metadata/identifier"
-	"github.com/apache/dubbo-go/metadata/report"
-	"github.com/apache/dubbo-go/metadata/report/factory"
-	"github.com/apache/dubbo-go/remoting/etcdv3"
+	gxset "github.com/dubbogo/gost/container/set"
+	gxetcd "github.com/dubbogo/gost/database/kv/etcd/v3"
+
+	perrors "github.com/pkg/errors"
+)
+
+import (
+	"dubbo.apache.org/dubbo-go/v3/common"
+	"dubbo.apache.org/dubbo-go/v3/common/constant"
+	"dubbo.apache.org/dubbo-go/v3/common/extension"
+	"dubbo.apache.org/dubbo-go/v3/common/logger"
+	"dubbo.apache.org/dubbo-go/v3/metadata/identifier"
+	"dubbo.apache.org/dubbo-go/v3/metadata/report"
+	"dubbo.apache.org/dubbo-go/v3/metadata/report/factory"
 )
 
 const DEFAULT_ROOT = "dubbo"
@@ -43,29 +49,52 @@ func init() {
 
 // etcdMetadataReport is the implementation of MetadataReport based etcd
 type etcdMetadataReport struct {
-	client *etcdv3.Client
+	client *gxetcd.Client
 	root   string
+}
+
+// GetAppMetadata get metadata info from etcd
+func (e *etcdMetadataReport) GetAppMetadata(metadataIdentifier *identifier.SubscriberMetadataIdentifier) (*common.MetadataInfo, error) {
+	key := e.getNodeKey(metadataIdentifier)
+	data, err := e.client.Get(key)
+	if err != nil {
+		return nil, err
+	}
+
+	info := &common.MetadataInfo{}
+	return info, json.Unmarshal([]byte(data), info)
+}
+
+// PublishAppMetadata publish metadata info to etcd
+func (e *etcdMetadataReport) PublishAppMetadata(metadataIdentifier *identifier.SubscriberMetadataIdentifier, info *common.MetadataInfo) error {
+	key := e.getNodeKey(metadataIdentifier)
+	value, err := json.Marshal(info)
+	if err == nil {
+		err = e.client.Put(key, string(value))
+	}
+
+	return err
 }
 
 // StoreProviderMetadata will store the metadata
 // metadata including the basic info of the server, provider info, and other user custom info
 func (e *etcdMetadataReport) StoreProviderMetadata(providerIdentifier *identifier.MetadataIdentifier, serviceDefinitions string) error {
 	key := e.getNodeKey(providerIdentifier)
-	return e.client.Create(key, serviceDefinitions)
+	return e.client.Put(key, serviceDefinitions)
 }
 
 // StoreConsumerMetadata will store the metadata
 // metadata including the basic info of the server, consumer info, and other user custom info
 func (e *etcdMetadataReport) StoreConsumerMetadata(consumerMetadataIdentifier *identifier.MetadataIdentifier, serviceParameterString string) error {
 	key := e.getNodeKey(consumerMetadataIdentifier)
-	return e.client.Create(key, serviceParameterString)
+	return e.client.Put(key, serviceParameterString)
 }
 
 // SaveServiceMetadata will store the metadata
 // metadata including the basic info of the server, service info, and other user custom info
-func (e *etcdMetadataReport) SaveServiceMetadata(metadataIdentifier *identifier.ServiceMetadataIdentifier, url common.URL) error {
+func (e *etcdMetadataReport) SaveServiceMetadata(metadataIdentifier *identifier.ServiceMetadataIdentifier, url *common.URL) error {
 	key := e.getNodeKey(metadataIdentifier)
-	return e.client.Create(key, url.String())
+	return e.client.Put(key, url.String())
 }
 
 // RemoveServiceMetadata will remove the service metadata
@@ -90,7 +119,7 @@ func (e *etcdMetadataReport) GetExportedURLs(metadataIdentifier *identifier.Serv
 // SaveSubscribedData will convert the urlList to json array and then store it
 func (e *etcdMetadataReport) SaveSubscribedData(subscriberMetadataIdentifier *identifier.SubscriberMetadataIdentifier, urls string) error {
 	key := e.getNodeKey(subscriberMetadataIdentifier)
-	return e.client.Create(key, urls)
+	return e.client.Put(key, urls)
 }
 
 // GetSubscribedURLs will lookup the url
@@ -115,13 +144,44 @@ func (e *etcdMetadataReport) GetServiceDefinition(metadataIdentifier *identifier
 	return content, nil
 }
 
+// RegisterServiceAppMapping map the specified Dubbo service interface to current Dubbo app name
+func (e *etcdMetadataReport) RegisterServiceAppMapping(key string, group string, value string) error {
+	path := e.root + constant.PATH_SEPARATOR + group + constant.PATH_SEPARATOR + key
+	oldVal, err := e.client.Get(path)
+	if perrors.Cause(err) == gxetcd.ErrKVPairNotFound {
+		return e.client.Put(path, value)
+	} else if err != nil {
+		return err
+	}
+	if strings.Contains(oldVal, value) {
+		return nil
+	}
+	value = oldVal + constant.COMMA_SEPARATOR + value
+	return e.client.Put(path, value)
+}
+
+// GetServiceAppMapping get the app names from the specified Dubbo service interface
+func (e *etcdMetadataReport) GetServiceAppMapping(key string, group string) (*gxset.HashSet, error) {
+	path := e.root + constant.PATH_SEPARATOR + group + constant.PATH_SEPARATOR + key
+	v, err := e.client.Get(path)
+	if err != nil {
+		return nil, err
+	}
+	appNames := strings.Split(v, constant.COMMA_SEPARATOR)
+	set := gxset.NewSet()
+	for _, app := range appNames {
+		set.Add(app)
+	}
+	return set, nil
+}
+
 type etcdMetadataReportFactory struct{}
 
 // CreateMetadataReport get the MetadataReport instance of etcd
 func (e *etcdMetadataReportFactory) CreateMetadataReport(url *common.URL) report.MetadataReport {
-	timeout, _ := time.ParseDuration(url.GetParam(constant.REGISTRY_TIMEOUT_KEY, constant.DEFAULT_REG_TIMEOUT))
+	timeout := url.GetParamDuration(constant.CONFIG_TIMEOUT_KEY, constant.DEFAULT_REG_TIMEOUT)
 	addresses := strings.Split(url.Location, ",")
-	client, err := etcdv3.NewClient(etcdv3.MetadataETCDV3Client, addresses, timeout, 1)
+	client, err := gxetcd.NewClient(gxetcd.MetadataETCDV3Client, addresses, timeout, 1)
 	if err != nil {
 		logger.Errorf("Could not create etcd metadata report. URL: %s,error:{%v}", url.String(), err)
 		return nil

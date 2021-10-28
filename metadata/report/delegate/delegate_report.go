@@ -26,17 +26,19 @@ import (
 
 import (
 	"github.com/go-co-op/gocron"
+
 	perrors "github.com/pkg/errors"
+
 	"go.uber.org/atomic"
 )
 
 import (
-	"github.com/apache/dubbo-go/common"
-	"github.com/apache/dubbo-go/common/constant"
-	"github.com/apache/dubbo-go/common/logger"
-	"github.com/apache/dubbo-go/config/instance"
-	"github.com/apache/dubbo-go/metadata/definition"
-	"github.com/apache/dubbo-go/metadata/identifier"
+	"dubbo.apache.org/dubbo-go/v3/common"
+	"dubbo.apache.org/dubbo-go/v3/common/constant"
+	"dubbo.apache.org/dubbo-go/v3/common/logger"
+	"dubbo.apache.org/dubbo-go/v3/config/instance"
+	"dubbo.apache.org/dubbo-go/v3/metadata/definition"
+	"dubbo.apache.org/dubbo-go/v3/metadata/identifier"
 )
 
 const (
@@ -94,7 +96,7 @@ func (mrr *metadataReportRetry) startRetryTask() {
 
 // MetadataReport is a absolute delegate for MetadataReport
 type MetadataReport struct {
-	reportUrl           common.URL
+	reportUrl           *common.URL
 	syncReport          bool
 	metadataReportRetry *metadataReportRetry
 
@@ -109,6 +111,10 @@ type MetadataReport struct {
 // NewMetadataReport will create a MetadataReport with initiation
 func NewMetadataReport() (*MetadataReport, error) {
 	url := instance.GetMetadataReportUrl()
+	if url == nil {
+		logger.Warn("the metadataReport URL is not configured, you should configure it.")
+		return nil, perrors.New("the metadataReport URL is not configured, you should configure it.")
+	}
 	bmr := &MetadataReport{
 		reportUrl:          url,
 		syncReport:         url.GetParamBool(constant.SYNC_REPORT_KEY, false),
@@ -121,7 +127,6 @@ func NewMetadataReport() (*MetadataReport, error) {
 		url.GetParamInt(constant.RETRY_TIMES_KEY, defaultMetadataReportRetryTimes),
 		bmr.retry,
 	)
-
 	if err != nil {
 		return nil, err
 	}
@@ -135,7 +140,6 @@ func NewMetadataReport() (*MetadataReport, error) {
 				bmr.allMetadataReportsLock.RLock()
 				bmr.doHandlerMetadataCollection(bmr.allMetadataReports)
 				bmr.allMetadataReportsLock.RUnlock()
-
 			})
 		if err != nil {
 			return nil, err
@@ -144,6 +148,18 @@ func NewMetadataReport() (*MetadataReport, error) {
 		scheduler.Start()
 	}
 	return bmr, nil
+}
+
+// PublishAppMetadata delegate publish metadata info
+func (mr *MetadataReport) PublishAppMetadata(identifier *identifier.SubscriberMetadataIdentifier, info *common.MetadataInfo) error {
+	report := instance.GetMetadataReportInstance()
+	return report.PublishAppMetadata(identifier, info)
+}
+
+// GetAppMetadata delegate get metadata info
+func (mr *MetadataReport) GetAppMetadata(identifier *identifier.SubscriberMetadataIdentifier) (*common.MetadataInfo, error) {
+	report := instance.GetMetadataReportInstance()
+	return report.GetAppMetadata(identifier)
 }
 
 // retry will do metadata failed reports collection by call metadata report sdk
@@ -202,7 +218,6 @@ func (mr *MetadataReport) storeMetadataTask(role int, identifier *identifier.Met
 
 	if err != nil {
 		logger.Errorf("storeProviderMetadataTask error in stage call  metadata report to StoreProviderMetadata, msg is %+v", err)
-		panic(err)
 	}
 }
 
@@ -215,12 +230,16 @@ func (mr *MetadataReport) StoreConsumerMetadata(identifier *identifier.MetadataI
 }
 
 // SaveServiceMetadata will delegate to call remote metadata's sdk to save service metadata
-func (mr *MetadataReport) SaveServiceMetadata(identifier *identifier.ServiceMetadataIdentifier, url common.URL) error {
+func (mr *MetadataReport) SaveServiceMetadata(identifier *identifier.ServiceMetadataIdentifier, url *common.URL) error {
 	report := instance.GetMetadataReportInstance()
 	if mr.syncReport {
 		return report.SaveServiceMetadata(identifier, url)
 	}
-	go report.SaveServiceMetadata(identifier, url)
+	go func() {
+		if err := report.SaveServiceMetadata(identifier, url); err != nil {
+			logger.Warnf("report.SaveServiceMetadata(identifier:%v, url:%v) = error:%v", identifier, url, err)
+		}
+	}()
 	return nil
 }
 
@@ -230,7 +249,11 @@ func (mr *MetadataReport) RemoveServiceMetadata(identifier *identifier.ServiceMe
 	if mr.syncReport {
 		return report.RemoveServiceMetadata(identifier)
 	}
-	go report.RemoveServiceMetadata(identifier)
+	go func() {
+		if err := report.RemoveServiceMetadata(identifier); err != nil {
+			logger.Warnf("report.RemoveServiceMetadata(identifier:%v) = error:%v", identifier, err)
+		}
+	}()
 	return nil
 }
 
@@ -241,7 +264,7 @@ func (mr *MetadataReport) GetExportedURLs(identifier *identifier.ServiceMetadata
 }
 
 // SaveSubscribedData will delegate to call remote metadata's sdk to save subscribed data
-func (mr *MetadataReport) SaveSubscribedData(identifier *identifier.SubscriberMetadataIdentifier, urls []common.URL) error {
+func (mr *MetadataReport) SaveSubscribedData(identifier *identifier.SubscriberMetadataIdentifier, urls []*common.URL) error {
 	urlStrList := make([]string, 0, len(urls))
 	for _, url := range urls {
 		urlStrList = append(urlStrList, url.String())
@@ -255,18 +278,23 @@ func (mr *MetadataReport) SaveSubscribedData(identifier *identifier.SubscriberMe
 	if mr.syncReport {
 		return report.SaveSubscribedData(identifier, string(bytes))
 	}
-	go report.SaveSubscribedData(identifier, string(bytes))
+	go func() {
+		if err := report.SaveSubscribedData(identifier, string(bytes)); err != nil {
+			logger.Warnf("report.SaveSubscribedData(identifier:%v, string(bytes):%v) = error: %v",
+				identifier, string(bytes), err)
+		}
+	}()
 	return nil
 }
 
 // GetSubscribedURLs will delegate to call remote metadata's sdk to get subscribed urls
-func (MetadataReport) GetSubscribedURLs(identifier *identifier.SubscriberMetadataIdentifier) ([]string, error) {
+func (mr *MetadataReport) GetSubscribedURLs(identifier *identifier.SubscriberMetadataIdentifier) ([]string, error) {
 	report := instance.GetMetadataReportInstance()
 	return report.GetSubscribedURLs(identifier)
 }
 
 // GetServiceDefinition will delegate to call remote metadata's sdk to get service definitions
-func (MetadataReport) GetServiceDefinition(identifier *identifier.MetadataIdentifier) (string, error) {
+func (mr *MetadataReport) GetServiceDefinition(identifier *identifier.MetadataIdentifier) (string, error) {
 	report := instance.GetMetadataReportInstance()
 	return report.GetServiceDefinition(identifier)
 }

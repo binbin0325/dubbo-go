@@ -23,11 +23,11 @@ import (
 )
 
 import (
-	"github.com/apache/dubbo-go/common"
-	"github.com/apache/dubbo-go/common/constant"
-	"github.com/apache/dubbo-go/common/extension"
-	"github.com/apache/dubbo-go/filter"
-	"github.com/apache/dubbo-go/protocol"
+	"dubbo.apache.org/dubbo-go/v3/common"
+	"dubbo.apache.org/dubbo-go/v3/common/constant"
+	"dubbo.apache.org/dubbo-go/v3/common/extension"
+	"dubbo.apache.org/dubbo-go/v3/filter"
+	"dubbo.apache.org/dubbo-go/v3/protocol"
 )
 
 const (
@@ -48,18 +48,22 @@ type ProtocolFilterWrapper struct {
 // Export service for remote invocation
 func (pfw *ProtocolFilterWrapper) Export(invoker protocol.Invoker) protocol.Exporter {
 	if pfw.protocol == nil {
-		pfw.protocol = extension.GetProtocol(invoker.GetUrl().Protocol)
+		pfw.protocol = extension.GetProtocol(invoker.GetURL().Protocol)
 	}
-	invoker = buildInvokerChain(invoker, constant.SERVICE_FILTER_KEY)
+	invoker = BuildInvokerChain(invoker, constant.SERVICE_FILTER_KEY)
 	return pfw.protocol.Export(invoker)
 }
 
 // Refer a remote service
-func (pfw *ProtocolFilterWrapper) Refer(url common.URL) protocol.Invoker {
+func (pfw *ProtocolFilterWrapper) Refer(url *common.URL) protocol.Invoker {
 	if pfw.protocol == nil {
 		pfw.protocol = extension.GetProtocol(url.Protocol)
 	}
-	return buildInvokerChain(pfw.protocol.Refer(url), constant.REFERENCE_FILTER_KEY)
+	invoker := pfw.protocol.Refer(url)
+	if invoker == nil {
+		return nil
+	}
+	return BuildInvokerChain(invoker, constant.REFERENCE_FILTER_KEY)
 }
 
 // Destroy will destroy all invoker and exporter.
@@ -67,22 +71,20 @@ func (pfw *ProtocolFilterWrapper) Destroy() {
 	pfw.protocol.Destroy()
 }
 
-func buildInvokerChain(invoker protocol.Invoker, key string) protocol.Invoker {
-	filtName := invoker.GetUrl().GetParam(key, "")
-	if filtName == "" {
+func BuildInvokerChain(invoker protocol.Invoker, key string) protocol.Invoker {
+	filterName := invoker.GetURL().GetParam(key, "")
+	if filterName == "" {
 		return invoker
 	}
-	filtNames := strings.Split(filtName, ",")
-	next := invoker
+	filterNames := strings.Split(filterName, ",")
 
 	// The order of filters is from left to right, so loading from right to left
-
-	for i := len(filtNames) - 1; i >= 0; i-- {
-		flt := extension.GetFilter(filtNames[i])
+	next := invoker
+	for i := len(filterNames) - 1; i >= 0; i-- {
+		flt := extension.GetFilter(strings.TrimSpace(filterNames[i]))
 		fi := &FilterInvoker{next: next, invoker: invoker, filter: flt}
 		next = fi
 	}
-
 	return next
 }
 
@@ -102,9 +104,9 @@ type FilterInvoker struct {
 	filter  filter.Filter
 }
 
-// GetUrl is used to get url from FilterInvoker
-func (fi *FilterInvoker) GetUrl() common.URL {
-	return fi.invoker.GetUrl()
+// GetURL is used to get url from FilterInvoker
+func (fi *FilterInvoker) GetURL() *common.URL {
+	return fi.invoker.GetURL()
 }
 
 // IsAvailable is used to get available status

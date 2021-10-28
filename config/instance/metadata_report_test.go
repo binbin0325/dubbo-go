@@ -22,15 +22,17 @@ import (
 )
 
 import (
+	gxset "github.com/dubbogo/gost/container/set"
+
 	"github.com/stretchr/testify/assert"
 )
 
 import (
-	"github.com/apache/dubbo-go/common"
-	"github.com/apache/dubbo-go/common/extension"
-	"github.com/apache/dubbo-go/metadata/identifier"
-	"github.com/apache/dubbo-go/metadata/report"
-	"github.com/apache/dubbo-go/metadata/report/factory"
+	"dubbo.apache.org/dubbo-go/v3/common"
+	"dubbo.apache.org/dubbo-go/v3/common/extension"
+	"dubbo.apache.org/dubbo-go/v3/metadata/identifier"
+	"dubbo.apache.org/dubbo-go/v3/metadata/report"
+	"dubbo.apache.org/dubbo-go/v3/metadata/report/factory"
 )
 
 func TestGetMetadataReportInstance(t *testing.T) {
@@ -38,18 +40,32 @@ func TestGetMetadataReportInstance(t *testing.T) {
 		return &mockMetadataReportFactory{}
 	})
 	u, _ := common.NewURL("mock://127.0.0.1")
-	rpt := GetMetadataReportInstance(&u)
+	rpt := GetMetadataReportInstance(u)
 	assert.NotNil(t, rpt)
 }
 
-type mockMetadataReportFactory struct {
-}
+type mockMetadataReportFactory struct{}
 
 func (m *mockMetadataReportFactory) CreateMetadataReport(*common.URL) report.MetadataReport {
 	return &mockMetadataReport{}
 }
 
-type mockMetadataReport struct {
+type mockMetadataReport struct{}
+
+func (m mockMetadataReport) RegisterServiceAppMapping(string, string, string) error {
+	panic("implement me")
+}
+
+func (m mockMetadataReport) GetServiceAppMapping(string, string) (*gxset.HashSet, error) {
+	panic("implement me")
+}
+
+func (m mockMetadataReport) GetAppMetadata(*identifier.SubscriberMetadataIdentifier) (*common.MetadataInfo, error) {
+	panic("implement me")
+}
+
+func (m mockMetadataReport) PublishAppMetadata(*identifier.SubscriberMetadataIdentifier, *common.MetadataInfo) error {
+	panic("implement me")
 }
 
 func (m mockMetadataReport) StoreProviderMetadata(*identifier.MetadataIdentifier, string) error {
@@ -60,7 +76,7 @@ func (m mockMetadataReport) StoreConsumerMetadata(*identifier.MetadataIdentifier
 	panic("implement me")
 }
 
-func (m mockMetadataReport) SaveServiceMetadata(*identifier.ServiceMetadataIdentifier, common.URL) error {
+func (m mockMetadataReport) SaveServiceMetadata(*identifier.ServiceMetadataIdentifier, *common.URL) error {
 	panic("implement me")
 }
 

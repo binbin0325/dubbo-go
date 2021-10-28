@@ -19,18 +19,21 @@ package etcdv3
 
 import (
 	"strings"
+	"sync"
 )
 
 import (
+	gxchan "github.com/dubbogo/gost/container/chan"
+
 	perrors "github.com/pkg/errors"
 )
 
 import (
-	"github.com/apache/dubbo-go/common"
-	"github.com/apache/dubbo-go/common/logger"
-	"github.com/apache/dubbo-go/config_center"
-	"github.com/apache/dubbo-go/registry"
-	"github.com/apache/dubbo-go/remoting"
+	"dubbo.apache.org/dubbo-go/v3/common"
+	"dubbo.apache.org/dubbo-go/v3/common/logger"
+	"dubbo.apache.org/dubbo-go/v3/config_center"
+	"dubbo.apache.org/dubbo-go/v3/registry"
+	"dubbo.apache.org/dubbo-go/v3/remoting"
 )
 
 type dataListener struct {
@@ -50,7 +53,6 @@ func (l *dataListener) AddInterestedURL(url *common.URL) {
 
 // DataChange processes the data change event from registry center of etcd
 func (l *dataListener) DataChange(eventType remoting.Event) bool {
-
 	index := strings.Index(eventType.Path, "/providers/")
 	if index == -1 {
 		logger.Warnf("Listen with no url, event.path={%v}", eventType.Path)
@@ -64,7 +66,7 @@ func (l *dataListener) DataChange(eventType remoting.Event) bool {
 	}
 
 	for _, v := range l.interestedURL {
-		if serviceURL.URLEqual(*v) {
+		if serviceURL.URLEqual(v) {
 			l.listener.Process(
 				&config_center.ConfigChangeEvent{
 					Key:        eventType.Path,
@@ -79,20 +81,21 @@ func (l *dataListener) DataChange(eventType remoting.Event) bool {
 }
 
 type configurationListener struct {
-	registry *etcdV3Registry
-	events   chan *config_center.ConfigChangeEvent
+	registry  *etcdV3Registry
+	events    *gxchan.UnboundedChan
+	closeOnce sync.Once
 }
 
 // NewConfigurationListener for listening the event of etcdv3.
 func NewConfigurationListener(reg *etcdV3Registry) *configurationListener {
 	// add a new waiter
 	reg.WaitGroup().Add(1)
-	return &configurationListener{registry: reg, events: make(chan *config_center.ConfigChangeEvent, 32)}
+	return &configurationListener{registry: reg, events: gxchan.NewUnboundedChan(32)}
 }
 
 // Process data change event from config center of etcd
 func (l *configurationListener) Process(configType *config_center.ConfigChangeEvent) {
-	l.events <- configType
+	l.events.In() <- configType
 }
 
 // Next returns next service event once received
@@ -103,7 +106,8 @@ func (l *configurationListener) Next() (*registry.ServiceEvent, error) {
 			logger.Warnf("listener's etcd client connection is broken, so etcd event listener exit now.")
 			return nil, perrors.New("listener stopped")
 
-		case e := <-l.events:
+		case val := <-l.events.Out():
+			e, _ := val.(*config_center.ConfigChangeEvent)
 			logger.Infof("got etcd event %#v", e)
 			if e.ConfigType == remoting.EventTypeDel && l.registry.client.Valid() {
 				select {
@@ -113,12 +117,14 @@ func (l *configurationListener) Next() (*registry.ServiceEvent, error) {
 				}
 				continue
 			}
-			return &registry.ServiceEvent{Action: e.ConfigType, Service: e.Value.(common.URL)}, nil
+			return &registry.ServiceEvent{Action: e.ConfigType, Service: e.Value.(*common.URL)}, nil
 		}
 	}
 }
 
 // Close etcd registry center
 func (l *configurationListener) Close() {
-	l.registry.WaitGroup().Done()
+	l.closeOnce.Do(func() {
+		l.registry.WaitGroup().Done()
+	})
 }

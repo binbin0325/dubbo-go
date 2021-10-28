@@ -30,8 +30,8 @@ import (
 )
 
 import (
-	common "github.com/apache/dubbo-go/common"
-	protocol "github.com/apache/dubbo-go/protocol"
+	common "dubbo.apache.org/dubbo-go/v3/common"
+	protocol "dubbo.apache.org/dubbo-go/v3/protocol"
 )
 
 // MockRejectedExecutionHandler is a mock of RejectedExecutionHandler interface
@@ -58,7 +58,7 @@ func (m *MockRejectedExecutionHandler) EXPECT() *MockRejectedExecutionHandlerMoc
 }
 
 // RejectedExecution mocks base method
-func (m *MockRejectedExecutionHandler) RejectedExecution(url common.URL, invocation protocol.Invocation) protocol.Result {
+func (m *MockRejectedExecutionHandler) RejectedExecution(url *common.URL, invocation protocol.Invocation) protocol.Result {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "RejectedExecution", url, invocation)
 	ret0, _ := ret[0].(protocol.Result)

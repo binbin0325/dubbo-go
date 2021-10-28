@@ -22,12 +22,27 @@ import (
 )
 
 import (
-	"github.com/apache/dubbo-go/common"
-	"github.com/apache/dubbo-go/common/logger"
+	perrors "github.com/pkg/errors"
+
+	uatomic "go.uber.org/atomic"
 )
 
-// Invoker ...
-//go:generate mockgen -source invoker.go -destination mock/mock_invoker.go  -self_package github.com/apache/dubbo-go/protocol/mock --package mock  Invoker
+import (
+	"dubbo.apache.org/dubbo-go/v3/common"
+	"dubbo.apache.org/dubbo-go/v3/common/logger"
+)
+
+var (
+	// ErrClientClosed means client has clossed.
+	ErrClientClosed = perrors.New("remoting client has closed")
+	// ErrNoReply
+	ErrNoReply = perrors.New("request need @response")
+	// ErrDestroyedInvoker
+	ErrDestroyedInvoker = perrors.New("request Destroyed invoker")
+)
+
+// Invoker the service invocation interface for the consumer
+//go:generate mockgen -source invoker.go -destination mock/mock_invoker.go -self_package dubbo.apache.org/dubbo-go/v3/protocol/mock --package mock Invoker
 // Extension - Invoker
 type Invoker interface {
 	common.Node
@@ -41,33 +56,35 @@ type Invoker interface {
 
 // BaseInvoker provides default invoker implement
 type BaseInvoker struct {
-	url       common.URL
-	available bool
-	destroyed bool
+	url       *common.URL
+	available uatomic.Bool
+	destroyed uatomic.Bool
 }
 
 // NewBaseInvoker creates a new BaseInvoker
-func NewBaseInvoker(url common.URL) *BaseInvoker {
-	return &BaseInvoker{
-		url:       url,
-		available: true,
-		destroyed: false,
+func NewBaseInvoker(url *common.URL) *BaseInvoker {
+	ivk := &BaseInvoker{
+		url: url,
 	}
+	ivk.available.Store(true)
+	ivk.destroyed.Store(false)
+
+	return ivk
 }
 
-// GetUrl gets base invoker URL
-func (bi *BaseInvoker) GetUrl() common.URL {
+// GetURL gets base invoker URL
+func (bi *BaseInvoker) GetURL() *common.URL {
 	return bi.url
 }
 
 // IsAvailable gets available flag
 func (bi *BaseInvoker) IsAvailable() bool {
-	return bi.available
+	return bi.available.Load()
 }
 
 // IsDestroyed gets destroyed flag
 func (bi *BaseInvoker) IsDestroyed() bool {
-	return bi.destroyed
+	return bi.destroyed.Load()
 }
 
 // Invoke provides default invoker implement
@@ -77,7 +94,7 @@ func (bi *BaseInvoker) Invoke(context context.Context, invocation Invocation) Re
 
 // Destroy changes available and destroyed flag
 func (bi *BaseInvoker) Destroy() {
-	logger.Infof("Destroy invoker: %s", bi.GetUrl().String())
-	bi.destroyed = true
-	bi.available = false
+	logger.Infof("Destroy invoker: %s", bi.GetURL())
+	bi.destroyed.Store(true)
+	bi.available.Store(false)
 }

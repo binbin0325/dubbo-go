@@ -22,15 +22,17 @@ import (
 )
 
 import (
+	gxchan "github.com/dubbogo/gost/container/chan"
+
 	perrors "github.com/pkg/errors"
 )
 
 import (
-	"github.com/apache/dubbo-go/common"
-	"github.com/apache/dubbo-go/common/logger"
-	"github.com/apache/dubbo-go/config_center"
-	"github.com/apache/dubbo-go/registry"
-	"github.com/apache/dubbo-go/remoting"
+	"dubbo.apache.org/dubbo-go/v3/common"
+	"dubbo.apache.org/dubbo-go/v3/common/logger"
+	"dubbo.apache.org/dubbo-go/v3/config_center"
+	"dubbo.apache.org/dubbo-go/v3/registry"
+	"dubbo.apache.org/dubbo-go/v3/remoting"
 )
 
 type dataListener struct {
@@ -51,7 +53,6 @@ func (l *dataListener) AddInterestedURL(url *common.URL) {
 // DataChange
 // notify listen, when interest event
 func (l *dataListener) DataChange(eventType remoting.Event) bool {
-
 	index := strings.Index(eventType.Path, "/providers/")
 	if index == -1 {
 		logger.Warnf("Listen with no url, event.path={%v}", eventType.Path)
@@ -65,7 +66,7 @@ func (l *dataListener) DataChange(eventType remoting.Event) bool {
 	}
 
 	for _, v := range l.interestedURL {
-		if serviceURL.URLEqual(*v) {
+		if serviceURL.URLEqual(v) {
 			l.listener.Process(
 				&config_center.ConfigChangeEvent{
 					Key:        eventType.Path,
@@ -81,19 +82,19 @@ func (l *dataListener) DataChange(eventType remoting.Event) bool {
 
 type configurationListener struct {
 	registry *kubernetesRegistry
-	events   chan *config_center.ConfigChangeEvent
+	events   *gxchan.UnboundedChan
 }
 
 // NewConfigurationListener for listening the event of kubernetes.
 func NewConfigurationListener(reg *kubernetesRegistry) *configurationListener {
 	// add a new waiter
 	reg.WaitGroup().Add(1)
-	return &configurationListener{registry: reg, events: make(chan *config_center.ConfigChangeEvent, 32)}
+	return &configurationListener{registry: reg, events: gxchan.NewUnboundedChan(32)}
 }
 
 // Process processes the data change event from config center of kubernetes
 func (l *configurationListener) Process(configType *config_center.ConfigChangeEvent) {
-	l.events <- configType
+	l.events.In() <- configType
 }
 
 // Next returns next service event once received
@@ -104,7 +105,8 @@ func (l *configurationListener) Next() (*registry.ServiceEvent, error) {
 			logger.Warnf("listener's kubernetes client connection is broken, so kubernetes event listener exits now.")
 			return nil, perrors.New("listener stopped")
 
-		case e := <-l.events:
+		case val := <-l.events.Out():
+			e, _ := val.(*config_center.ConfigChangeEvent)
 			logger.Debugf("got kubernetes event %#v", e)
 			if e.ConfigType == remoting.EventTypeDel && !l.registry.client.Valid() {
 				select {
@@ -114,7 +116,7 @@ func (l *configurationListener) Next() (*registry.ServiceEvent, error) {
 				}
 				continue
 			}
-			return &registry.ServiceEvent{Action: e.ConfigType, Service: e.Value.(common.URL)}, nil
+			return &registry.ServiceEvent{Action: e.ConfigType, Service: e.Value.(*common.URL)}, nil
 		}
 	}
 }

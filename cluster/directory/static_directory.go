@@ -22,9 +22,9 @@ import (
 )
 
 import (
-	"github.com/apache/dubbo-go/cluster/router/chain"
-	"github.com/apache/dubbo-go/common"
-	"github.com/apache/dubbo-go/protocol"
+	"dubbo.apache.org/dubbo-go/v3/cluster/router/chain"
+	"dubbo.apache.org/dubbo-go/v3/common"
+	"dubbo.apache.org/dubbo-go/v3/protocol"
 )
 
 type staticDirectory struct {
@@ -34,18 +34,21 @@ type staticDirectory struct {
 
 // NewStaticDirectory Create a new staticDirectory with invokers
 func NewStaticDirectory(invokers []protocol.Invoker) *staticDirectory {
-	var url common.URL
+	var url *common.URL
 
 	if len(invokers) > 0 {
-		url = invokers[0].GetUrl()
+		url = invokers[0].GetURL()
 	}
-	return &staticDirectory{
-		BaseDirectory: NewBaseDirectory(&url),
+	dir := &staticDirectory{
+		BaseDirectory: NewBaseDirectory(url),
 		invokers:      invokers,
 	}
+
+	dir.routerChain.SetInvokers(invokers)
+	return dir
 }
 
-//for-loop invokers ,if all invokers is available ,then it means directory is available
+// for-loop invokers ,if all invokers is available ,then it means directory is available
 func (dir *staticDirectory) IsAvailable() bool {
 	if len(dir.invokers) == 0 {
 		return false
@@ -68,8 +71,8 @@ func (dir *staticDirectory) List(invocation protocol.Invocation) []protocol.Invo
 	if routerChain == nil {
 		return invokers
 	}
-	dirUrl := dir.GetUrl()
-	return routerChain.Route(invokers, &dirUrl, invocation)
+	dirUrl := dir.GetURL()
+	return routerChain.Route(dirUrl, invocation)
 }
 
 // Destroy Destroy
@@ -87,11 +90,12 @@ func (dir *staticDirectory) BuildRouterChain(invokers []protocol.Invoker) error 
 	if len(invokers) == 0 {
 		return perrors.Errorf("invokers == null")
 	}
-	url := invokers[0].GetUrl()
-	routerChain, e := chain.NewRouterChain(&url)
+	url := invokers[0].GetURL()
+	routerChain, e := chain.NewRouterChain(url)
 	if e != nil {
 		return e
 	}
+	routerChain.SetInvokers(dir.invokers)
 	dir.SetRouterChain(routerChain)
 	return nil
 }

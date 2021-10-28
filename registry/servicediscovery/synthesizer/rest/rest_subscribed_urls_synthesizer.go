@@ -23,29 +23,25 @@ import (
 )
 
 import (
-	"github.com/apache/dubbo-go/common"
-	"github.com/apache/dubbo-go/common/constant"
-	"github.com/apache/dubbo-go/registry"
-	"github.com/apache/dubbo-go/registry/servicediscovery/synthesizer"
+	"dubbo.apache.org/dubbo-go/v3/common"
+	"dubbo.apache.org/dubbo-go/v3/common/constant"
+	"dubbo.apache.org/dubbo-go/v3/registry"
+	"dubbo.apache.org/dubbo-go/v3/registry/servicediscovery/synthesizer"
 )
 
 func init() {
 	synthesizer.AddSynthesizer(NewRestSubscribedURLsSynthesizer())
 }
 
-//SubscribedURLsSynthesizer implementation for rest protocol
-type RestSubscribedURLsSynthesizer struct {
-}
+// SubscribedURLsSynthesizer implementation for rest protocol
+type RestSubscribedURLsSynthesizer struct{}
 
 func (r RestSubscribedURLsSynthesizer) Support(subscribedURL *common.URL) bool {
-	if "rest" == subscribedURL.Protocol {
-		return true
-	}
-	return false
+	return "rest" == subscribedURL.Protocol
 }
 
-func (r RestSubscribedURLsSynthesizer) Synthesize(subscribedURL *common.URL, serviceInstances []registry.ServiceInstance) []common.URL {
-	urls := make([]common.URL, len(serviceInstances), len(serviceInstances))
+func (r RestSubscribedURLsSynthesizer) Synthesize(subscribedURL *common.URL, serviceInstances []registry.ServiceInstance) []*common.URL {
+	urls := make([]*common.URL, len(serviceInstances))
 	for i, s := range serviceInstances {
 		splitHost := strings.Split(s.GetHost(), ":")
 		u := common.NewURLWithOptions(common.WithProtocol(subscribedURL.Protocol), common.WithIp(splitHost[0]),
@@ -55,7 +51,7 @@ func (r RestSubscribedURLsSynthesizer) Synthesize(subscribedURL *common.URL, ser
 			common.WithParamsValue(constant.APPLICATION_KEY, s.GetServiceName()),
 			common.WithParamsValue(constant.REGISTRY_KEY, "true"),
 		)
-		urls[i] = *u
+		urls[i] = u
 	}
 	return urls
 }

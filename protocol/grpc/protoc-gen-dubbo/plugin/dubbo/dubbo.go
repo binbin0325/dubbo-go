@@ -28,19 +28,11 @@ import (
 	"github.com/golang/protobuf/protoc-gen-go/generator"
 )
 
-// generatedCodeVersion indicates a version of the generated code.
-// It is incremented whenever an incompatibility between the generated code and
-// the grpc package is introduced; the generated code references
-// a constant, grpc.SupportPackageIsVersionN (where N is generatedCodeVersion).
-const generatedCodeVersion = 4
-
 // Paths for packages used by code generated in this file,
 // relative to the import_prefix of the generator.Generator.
 const (
 	contextPkgPath = "context"
 	grpcPkgPath    = "google.golang.org/grpc"
-	codePkgPath    = "google.golang.org/grpc/codes"
-	statusPkgPath  = "google.golang.org/grpc/status"
 )
 
 func init() {
@@ -104,9 +96,8 @@ func (g *dubboGrpc) Generate(file *generator.FileDescriptor) {
 // GenerateImports generates the import declaration for this file.
 func (g *dubboGrpc) GenerateImports(file *generator.FileDescriptor) {
 	g.P("import (")
-	g.P(`dgrpc "github.com/apache/dubbo-go/protocol/grpc"`)
-	g.P(`"github.com/apache/dubbo-go/protocol/invocation"`)
-	g.P(`"github.com/apache/dubbo-go/protocol"`)
+	g.P(`"dubbo.apache.org/dubbo-go/v3/protocol/invocation"`)
+	g.P(`"dubbo.apache.org/dubbo-go/v3/protocol"`)
 	g.P(` ) `)
 }
 
@@ -196,6 +187,12 @@ func (g *dubboGrpc) generateService(file *generator.FileDescriptor, service *pb.
 	g.P("}")
 	g.P()
 
+	// return reference
+	g.P("func (c *", serverType, ") ", " Reference() string ", "{")
+	g.P(`return "`, unexport(servName), `Impl"`)
+	g.P("}")
+	g.P()
+
 	// add handler
 	var handlerNames []string
 	for _, method := range service.Method {
@@ -220,7 +217,23 @@ func (g *dubboGrpc) generateService(file *generator.FileDescriptor, service *pb.
 		g.P("},")
 	}
 	g.P("},")
-	g.P("Streams: []", grpcPkg, ".StreamDesc{},")
+	g.P("Streams: []", grpcPkg, ".StreamDesc{")
+	for i, method := range service.Method {
+		if !method.GetClientStreaming() && !method.GetServerStreaming() {
+			continue
+		}
+		g.P("{")
+		g.P("StreamName: ", strconv.Quote(method.GetName()), ",")
+		g.P("Handler: ", handlerNames[i], ",")
+		if method.GetServerStreaming() {
+			g.P("ServerStreams: true,")
+		}
+		if method.GetClientStreaming() {
+			g.P("ClientStreams: true,")
+		}
+		g.P("},")
+	}
+	g.P("},")
 	g.P("Metadata: \"", file.GetName(), "\",")
 	g.P("}")
 	g.P("}")
@@ -241,31 +254,36 @@ func (g *dubboGrpc) generateClientSignature(servName string, method *pb.MethodDe
 	respName := "out *" + g.typeName(method.GetOutputType())
 	if method.GetServerStreaming() || method.GetClientStreaming() {
 		respName = servName + "_" + generator.CamelCase(origMethName) + "Client"
+		return fmt.Sprintf("%s func(ctx %s.Context%s) (%s, error)", methName, contextPkg, reqArg, respName)
 	}
 	return fmt.Sprintf("%s func(ctx %s.Context%s, %s) error", methName, contextPkg, reqArg, respName)
-}
-
-func (g *dubboGrpc) generateClientMethod(servName, fullServName, serviceDescVar string, method *pb.MethodDescriptorProto, descExpr string) {
 }
 
 func (g *dubboGrpc) generateServerMethod(servName, fullServName string, method *pb.MethodDescriptorProto) string {
 	methName := generator.CamelCase(method.GetName())
 	hname := fmt.Sprintf("_DUBBO_%s_%s_Handler", servName, methName)
 	inType := g.typeName(method.GetInputType())
-	outType := g.typeName(method.GetOutputType())
 
 	if !method.GetServerStreaming() && !method.GetClientStreaming() {
 		g.P("func ", hname, "(srv interface{}, ctx ", contextPkg, ".Context, dec func(interface{}) error, interceptor ", grpcPkg, ".UnaryServerInterceptor) (interface{}, error) {")
 		g.P("in := new(", inType, ")")
 		g.P("if err := dec(in); err != nil { return nil, err }")
-
-		g.P("base := srv.(dgrpc.DubboGrpcService)")
+		g.P(`// DubboGrpcService is gRPC service
+type DubboGrpcService interface {
+	// SetProxyImpl sets proxy.
+	SetProxyImpl(impl protocol.Invoker)
+	// GetProxyImpl gets proxy.
+	GetProxyImpl() protocol.Invoker
+	// ServiceDesc gets an RPC service's specification.
+	ServiceDesc() *grpc.ServiceDesc
+}`)
+		g.P("base := srv.(DubboGrpcService)")
 		g.P("args := []interface{}{}")
 		g.P("args = append(args, in)")
 		g.P(`invo := invocation.NewRPCInvocation("`, methName, `", args, nil)`)
 
 		g.P("if interceptor == nil {")
-		g.P("result := base.GetProxyImpl().Invoke(context.Background(), invo)")
+		g.P("result := base.GetProxyImpl().Invoke(ctx, invo)")
 		g.P("return result.Result(), result.Error()")
 		g.P("}")
 
@@ -275,7 +293,7 @@ func (g *dubboGrpc) generateServerMethod(servName, fullServName string, method *
 		g.P("}")
 
 		g.P("handler := func(ctx ", contextPkg, ".Context, req interface{}) (interface{}, error) {")
-		g.P("result := base.GetProxyImpl().Invoke(context.Background(), invo)")
+		g.P("result := base.GetProxyImpl().Invoke(ctx, invo)")
 		g.P("return result.Result(), result.Error()")
 		g.P("}")
 
@@ -286,6 +304,20 @@ func (g *dubboGrpc) generateServerMethod(servName, fullServName string, method *
 	}
 	streamType := unexport(servName) + methName + "Server"
 	g.P("func ", hname, "(srv interface{}, stream ", grpcPkg, ".ServerStream) error {")
+	g.P(`// DubboGrpcService is gRPC service
+type DubboGrpcService interface {
+	// SetProxyImpl sets proxy.
+	SetProxyImpl(impl protocol.Invoker)
+	// GetProxyImpl gets proxy.
+	GetProxyImpl() protocol.Invoker
+	// ServiceDesc gets an RPC service's specification.
+	ServiceDesc() *grpc.ServiceDesc
+}`)
+	g.P("_, ok := srv.(DubboGrpcService)")
+	g.P(`invo := invocation.NewRPCInvocation("`, methName, `", nil, nil)`)
+	g.P("if !ok {")
+	g.P("fmt.Println(invo)")
+	g.P("}")
 	if !method.GetClientStreaming() {
 		g.P("m := new(", inType, ")")
 		g.P("if err := stream.RecvMsg(m); err != nil { return err }")
@@ -295,51 +327,6 @@ func (g *dubboGrpc) generateServerMethod(servName, fullServName string, method *
 	}
 	g.P("}")
 	g.P()
-
-	genSend := method.GetServerStreaming()
-	genSendAndClose := !method.GetServerStreaming()
-	genRecv := method.GetClientStreaming()
-
-	// Stream auxiliary types and methods.
-	g.P("type ", servName, "_", methName, "Server interface {")
-	if genSend {
-		g.P("Send(*", outType, ") error")
-	}
-	if genSendAndClose {
-		g.P("SendAndClose(*", outType, ") error")
-	}
-	if genRecv {
-		g.P("Recv() (*", inType, ", error)")
-	}
-	g.P(grpcPkg, ".ServerStream")
-	g.P("}")
-	g.P()
-
-	g.P("type ", streamType, " struct {")
-	g.P(grpcPkg, ".ServerStream")
-	g.P("}")
-	g.P()
-
-	if genSend {
-		g.P("func (x *", streamType, ") Send(m *", outType, ") error {")
-		g.P("return x.ServerStream.SendMsg(m)")
-		g.P("}")
-		g.P()
-	}
-	if genSendAndClose {
-		g.P("func (x *", streamType, ") SendAndClose(m *", outType, ") error {")
-		g.P("return x.ServerStream.SendMsg(m)")
-		g.P("}")
-		g.P()
-	}
-	if genRecv {
-		g.P("func (x *", streamType, ") Recv() (*", inType, ", error) {")
-		g.P("m := new(", inType, ")")
-		g.P("if err := x.ServerStream.RecvMsg(m); err != nil { return nil, err }")
-		g.P("return m, nil")
-		g.P("}")
-		g.P()
-	}
 
 	return hname
 }

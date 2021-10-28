@@ -23,23 +23,25 @@ import (
 )
 
 import (
+	gxset "github.com/dubbogo/gost/container/set"
+
 	"github.com/stretchr/testify/assert"
 )
 
 import (
-	"github.com/apache/dubbo-go/common"
-	"github.com/apache/dubbo-go/common/extension"
-	"github.com/apache/dubbo-go/common/logger"
-	"github.com/apache/dubbo-go/config/instance"
-	"github.com/apache/dubbo-go/metadata/definition"
-	"github.com/apache/dubbo-go/metadata/identifier"
-	"github.com/apache/dubbo-go/metadata/report"
-	"github.com/apache/dubbo-go/metadata/report/factory"
-	"github.com/apache/dubbo-go/metadata/service/inmemory"
+	"dubbo.apache.org/dubbo-go/v3/common"
+	"dubbo.apache.org/dubbo-go/v3/common/extension"
+	"dubbo.apache.org/dubbo-go/v3/common/logger"
+	"dubbo.apache.org/dubbo-go/v3/config/instance"
+	"dubbo.apache.org/dubbo-go/v3/metadata/definition"
+	"dubbo.apache.org/dubbo-go/v3/metadata/identifier"
+	"dubbo.apache.org/dubbo-go/v3/metadata/report"
+	"dubbo.apache.org/dubbo-go/v3/metadata/report/factory"
+	"dubbo.apache.org/dubbo-go/v3/metadata/service/local"
 )
 
 var (
-	serviceMetadata    = make(map[*identifier.ServiceMetadataIdentifier]common.URL, 4)
+	serviceMetadata    = make(map[*identifier.ServiceMetadataIdentifier]*common.URL, 4)
 	subscribedMetadata = make(map[*identifier.SubscriberMetadataIdentifier]string, 4)
 )
 
@@ -47,14 +49,28 @@ func getMetadataReportFactory() factory.MetadataReportFactory {
 	return &metadataReportFactory{}
 }
 
-type metadataReportFactory struct {
-}
+type metadataReportFactory struct{}
 
 func (mrf *metadataReportFactory) CreateMetadataReport(*common.URL) report.MetadataReport {
 	return &metadataReport{}
 }
 
-type metadataReport struct {
+type metadataReport struct{}
+
+func (mr metadataReport) RegisterServiceAppMapping(string, string, string) error {
+	panic("implement me")
+}
+
+func (mr metadataReport) GetServiceAppMapping(string, string) (*gxset.HashSet, error) {
+	panic("implement me")
+}
+
+func (mr metadataReport) GetAppMetadata(*identifier.SubscriberMetadataIdentifier) (*common.MetadataInfo, error) {
+	panic("implement me")
+}
+
+func (mr metadataReport) PublishAppMetadata(*identifier.SubscriberMetadataIdentifier, *common.MetadataInfo) error {
+	panic("implement me")
 }
 
 func (metadataReport) StoreProviderMetadata(*identifier.MetadataIdentifier, string) error {
@@ -65,7 +81,7 @@ func (metadataReport) StoreConsumerMetadata(*identifier.MetadataIdentifier, stri
 	return nil
 }
 
-func (mr *metadataReport) SaveServiceMetadata(id *identifier.ServiceMetadataIdentifier, url common.URL) error {
+func (mr *metadataReport) SaveServiceMetadata(id *identifier.ServiceMetadataIdentifier, url *common.URL) error {
 	logger.Infof("SaveServiceMetadata , url is %v", url)
 	serviceMetadata[id] = url
 	return nil
@@ -95,17 +111,16 @@ func (metadataReport) GetServiceDefinition(*identifier.MetadataIdentifier) (stri
 
 func TestMetadataService(t *testing.T) {
 	extension.SetMetadataReportFactory("mock", getMetadataReportFactory)
-	u, err := common.NewURL(fmt.Sprintf("mock://127.0.0.1:20000/?sync.report=true"))
+	u, err := common.NewURL("mock://127.0.0.1:20000/?sync.report=true")
 	assert.NoError(t, err)
-	instance.GetMetadataReportInstance(&u)
-	mts, err := newMetadataService()
+	instance.GetMetadataReportInstance(u)
+	mts, err := GetRemoteMetadataService()
 	assert.NoError(t, err)
-	mts.(*MetadataService).setInMemoryMetadataService(mockInmemoryProc(t))
-	_, _ = mts.RefreshMetadata("0.0.1", "0.0.1")
+	assert.NotNil(t, mts)
 }
 
-func mockInmemoryProc(t *testing.T) *inmemory.MetadataService {
-	mts, _ := inmemory.NewMetadataService()
+func TestMockInmemoryProc(t *testing.T) {
+	mts, _ := local.GetLocalMetadataService()
 	serviceName := "com.ikurento.user.UserProvider"
 	group := "group1"
 	version := "0.0.1"
@@ -126,7 +141,7 @@ func mockInmemoryProc(t *testing.T) *inmemory.MetadataService {
 	_, err = mts.SubscribeURL(u)
 	assert.NoError(t, err)
 
-	_, err = common.ServiceMap.Register(serviceName, protocol, userProvider)
+	_, err = common.ServiceMap.Register(serviceName, protocol, group, version, userProvider)
 	assert.NoError(t, err)
 	err = mts.PublishServiceDefinition(u)
 	assert.NoError(t, err)
@@ -139,5 +154,4 @@ func mockInmemoryProc(t *testing.T) *inmemory.MetadataService {
 	serviceKey := definition.ServiceDescriperBuild(serviceName, group, version)
 	def2, _ := mts.GetServiceDefinitionByServiceKey(serviceKey)
 	assert.Equal(t, expected, def2)
-	return mts.(*inmemory.MetadataService)
 }
